@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+
+/* ===== Global Layout ===== */
+html,
+body,
+#root,
+.app,
+.content {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Source Sans 3', sans-serif;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #fafafa;
+  color: #222;
+}
+
+/* ===== App Container ===== */
+.app {
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ===== Scrollbar Styling ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 4px;
+  transition: background-color 0.3s ease-in-out;
+}
+
+/* Only show scrollbar on hover or while scrolling */
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+  background-color: rgba(120, 120, 120, 0.4);
+}
+
+/* Smooth scrolling for all elements */
+* {
+  scroll-behavior: smooth;
+}
+
+/* ===== Utility Improvements ===== */
+button,
+input,
+textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Optional: make focus outlines subtle but visible */
+:focus-visible {
+  outline: 2px solid rgba(33, 150, 243, 0.5);
+  outline-offset: 2px;
+}

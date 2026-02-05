@@ -1,0 +1,46 @@
+# --- General / OS ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Laravel Backend (erp-api-backend) ---
+erp-api-backend/vendor/
+erp-api-backend/node_modules/
+erp-api-backend/.env
+erp-api-backend/storage/*.key
+erp-api-backend/storage/framework/cache/data/*
+erp-api-backend/storage/framework/sessions/*
+erp-api-backend/storage/framework/views/*
+erp-api-backend/storage/logs/*.log
+erp-api-backend/bootstrap/cache/*
+erp-api-backend/public/storage
+erp-api-backend/public/hot
+erp-api-backend/public/build
+erp-api-backend/.phpunit.result.cache
+
+# --- React Frontend (erp-api-frontend / react-admin-dashboard) ---
+erp-api-frontend/node_modules/
+erp-api-frontend/dist/
+erp-api-frontend/.env
+erp-api-frontend/*.local
+react-admin-dashboard/node_modules/
+react-admin-dashboard/dist/
+react-admin-dashboard/.env
+
+# --- Large Files & Backups ---
+*.zip
+*.rar
+*.sql
+
+Backup/
+node_modules/
+vendor/
+Backup/
+react-admin-dashboard/node_modules/
+react-admin-dashboard/dist/
+erp-api-frontend/node_modules/
+erp-api-frontend/dist/
+erp-api-backend/vendor/
+erp-api-backend/node_modules/
+
