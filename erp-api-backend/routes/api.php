@@ -35,6 +35,8 @@ use App\Http\Controllers\Accounts\SupplierBillController;
 use App\Http\Controllers\Banking\MpesaCallbackController;
 use App\Http\Controllers\Inventory\StockAdjustmentController;
 use App\Http\Controllers\Calendar\CalendarController;
+use App\Http\Controllers\Calendar\CalendarFeedController;
+use App\Http\Controllers\Calendar\CalendarEventController;
 
 // --- PUBLIC ROUTES ---
 Route::get('/plans', fn () => SubscriptionPlan::all());
@@ -203,6 +205,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/events/{event}', [CalendarController::class, 'show']);
         Route::put('/events/{event}', [CalendarController::class, 'update']);
         Route::delete('/events/{event}', [CalendarController::class, 'destroy']);
+        Route::get('/feed', [CalendarFeedController::class, 'index']);
+        Route::patch('events/{event}/done', [CalendarController::class, 'toggleDone']);
+
 
         // Drag/drop + resize support (optional but clean)
         Route::patch('/events/{event}/move', [CalendarController::class, 'move']);

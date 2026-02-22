@@ -34,6 +34,7 @@ import {
 
 import dayjs from "dayjs";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 
@@ -43,29 +44,39 @@ import { useAuth } from "../../api/AuthProvider";
 import { toast } from "react-toastify";
 
 /* -----------------------------
-   Categories
+   API paths
+------------------------------ */
+const FEED_PATH = "/calendar/feed"; // adjust if your route differs
+const EVENTS_PATH = "/calendar/events";
+
+/* -----------------------------
+   Categories (manual only)
 ------------------------------ */
 const CATEGORIES = [
   { value: "TODO", label: "To-Do" },
   { value: "REMINDER", label: "Reminder" },
 ];
 
-const categoryColor = (cat, colors) => {
-  switch (cat) {
-    case "TODO":
-      return colors.blueAccent[500];
-    case "REMINDER":
-      return colors.greenAccent[500];
-    case "HOLIDAY":
-      return colors.redAccent[400];
-    default:
-      return colors.greenAccent[500];
-  }
+/* -----------------------------
+   Color presets (MUST match backend)
+------------------------------ */
+const COLOR_PRESETS = [
+  { value: "#2ECC71", label: "Green" },
+  { value: "#3498DB", label: "Blue" },
+  { value: "#9B59B6", label: "Purple" },
+  { value: "#E67E22", label: "Orange" },
+  { value: "#E74C3C", label: "Red" },
+  { value: "#95A5A6", label: "Gray" },
+];
+
+const defaultColorByCategory = (cat) => {
+  if (cat === "TODO") return "#3498DB";
+  if (cat === "REMINDER") return "#2ECC71";
+  return "#2ECC71";
 };
 
 /* -----------------------------
    Holidays (Public API)
-   NOTE: In production, best to proxy via your backend to avoid CORS/rate limits.
 ------------------------------ */
 const HOLIDAYS_API = "https://date.nager.at/api/v3/PublicHolidays";
 const COUNTRY_CODE = "KE";
@@ -86,6 +97,8 @@ const normalizeHoliday = (h) => ({
     types: h.types || null,
   },
   editable: false,
+  startEditable: false,
+  durationEditable: false,
 });
 
 /* -----------------------------
@@ -100,7 +113,8 @@ const emptyForm = {
   start: dayjs(),
   end: dayjs().add(1, "hour"),
   allDay: false,
-  color: "",
+  color: defaultColorByCategory("REMINDER"),
+  is_done: false,
 };
 
 const Calendar = () => {
@@ -113,7 +127,7 @@ const Calendar = () => {
   /* -----------------------------
      State
   ------------------------------ */
-  const [events, setEvents] = useState([]);
+  const [events, setEvents] = useState([]); // FEED events (manual + leave/offday/awol/company)
   const [fetching, setFetching] = useState(false);
 
   const [holidays, setHolidays] = useState([]);
@@ -141,58 +155,83 @@ const Calendar = () => {
     return msg;
   };
 
-  const normalizeFromLaravel = useCallback(
-    (e) => {
-      const cat = e.category || "REMINDER";
-      const fallbackColor = categoryColor(cat, colors);
+  const isHolidayOrBackground = (ev) =>
+    ev?.extendedProps?.category === "HOLIDAY" || ev?.display === "background";
 
-      return {
-        id: String(e.id),
-        title: e.title,
-        start: e.start,
-        end: e.end,
-        allDay: !!e.all_day,
-        backgroundColor: e.color || fallbackColor,
-        borderColor: e.color || fallbackColor,
-        extendedProps: {
-          category: cat,
-          description: e.description,
-          location: e.location,
-          createdBy: e.created_by,
-          updatedAt: e.updated_at,
-          color: e.color,
-        },
-      };
-    },
-    [colors]
-  );
+  const isManualSource = (source) => source === "manual";
+  const isManualEvent = (ev) => isManualSource(ev?.extendedProps?.source);
 
   /* -----------------------------
-     Events fetch (backend)
+     Normalize FEED events
+     (Feed already sends FullCalendar-friendly shapes)
   ------------------------------ */
-  const fetchEvents = useCallback(async () => {
-    if (!apiClient) return;
-    setFetching(true);
-    try {
-      const res = await apiClient.get("/calendar/events");
-      const list = Array.isArray(res.data?.data) ? res.data.data : [];
-      setEvents(list.map(normalizeFromLaravel));
-    } catch (error) {
-      console.error("Calendar fetch failed:", error?.response?.data || error);
-      const msg = extractLaravelError(error, "Failed to load calendar events.");
-      toast.error(msg);
-      showSnack("error", msg);
-    } finally {
-      setFetching(false);
-    }
-  }, [apiClient, normalizeFromLaravel]);
+  const normalizeFromFeed = useCallback((e) => {
+    const source = e?.extendedProps?.source || e?.source;
+    const cat = e?.extendedProps?.category || e?.category || "REMINDER";
+    const isDone = !!e?.extendedProps?.is_done;
 
-  // Fetch once when apiClient becomes ready
-  useEffect(() => {
-    if (apiClient) fetchEvents();
-    // intentionally only depend on apiClient to avoid loops
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiClient]);
+    const isManual = source === "manual";
+
+    const bg = e.backgroundColor || e.color || defaultColorByCategory(cat);
+    const br = e.borderColor || e.color || defaultColorByCategory(cat);
+
+    return {
+      id: String(e.id),
+      title: e.title,
+      start: e.start,
+      end: e.end,
+      allDay: !!e.allDay,
+
+      // ✅ only manual items can be edited/moved/resized
+      editable: isManual,
+      startEditable: isManual,
+      durationEditable: isManual,
+
+      display: e.display,
+      backgroundColor: bg,
+      borderColor: br,
+
+      extendedProps: {
+        ...(e.extendedProps || {}),
+        source,
+        category: cat,
+        is_done: isDone,
+        color: e?.extendedProps?.color || e.color || bg,
+      },
+
+      classNames: isDone ? ["ligco-event-done"] : [],
+    };
+  }, []);
+
+  /* -----------------------------
+     Fetch FEED by visible range
+  ------------------------------ */
+  const fetchFeed = useCallback(
+    async ({ start, end }) => {
+      if (!apiClient) return;
+      setFetching(true);
+
+      try {
+        const res = await apiClient.get(FEED_PATH, {
+          params: {
+            start: dayjs(start).toISOString(),
+            end: dayjs(end).toISOString(),
+          },
+        });
+
+        const list = Array.isArray(res.data?.data) ? res.data.data : [];
+        setEvents(list.map(normalizeFromFeed));
+      } catch (error) {
+        console.error("Calendar feed fetch failed:", error?.response?.data || error);
+        const msg = extractLaravelError(error, "Failed to load calendar feed.");
+        toast.error(msg);
+        showSnack("error", msg);
+      } finally {
+        setFetching(false);
+      }
+    },
+    [apiClient, normalizeFromFeed]
+  );
 
   /* -----------------------------
      Holidays fetch (cache + abort)
@@ -206,16 +245,13 @@ const Calendar = () => {
       return holidaysCacheRef.current.get(year);
     }
 
-    // abort prior holiday request
     if (holidayAbortRef.current) holidayAbortRef.current.abort();
     const controller = new AbortController();
     holidayAbortRef.current = controller;
 
     setHolidaysLoading(true);
     try {
-      const res = await fetch(`${HOLIDAYS_API}/${year}/${COUNTRY_CODE}`, {
-        signal: controller.signal,
-      });
+      const res = await fetch(`${HOLIDAYS_API}/${year}/${COUNTRY_CODE}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`Holidays API failed: ${res.status}`);
       const data = await res.json();
 
@@ -227,7 +263,6 @@ const Calendar = () => {
     }
   }, []);
 
-  // Preload current year + next year
   useEffect(() => {
     let cancelled = false;
 
@@ -254,30 +289,47 @@ const Calendar = () => {
     };
   }, [fetchHolidaysForYear]);
 
-  // When calendar view changes, auto-fetch holidays for that viewed year
+  /* -----------------------------
+     Debounced datesSet (prevents spam)
+  ------------------------------ */
+  const datesSetTimerRef = useRef(null);
+  useEffect(() => {
+    return () => {
+      if (datesSetTimerRef.current) clearTimeout(datesSetTimerRef.current);
+    };
+  }, []);
+
   const handleDatesSet = useCallback(
-    async (arg) => {
-      const y = dayjs(arg.start).year();
-      if (loadedYearsRef.current.has(y)) return;
+    (arg) => {
+      if (datesSetTimerRef.current) clearTimeout(datesSetTimerRef.current);
 
-      loadedYearsRef.current.add(y);
+      datesSetTimerRef.current = setTimeout(() => {
+        // 1) fetch feed for range
+        fetchFeed({ start: arg.start, end: arg.end });
 
-      try {
-        const list = await fetchHolidaysForYear(y);
-        setHolidays((prev) => {
-          const ids = new Set(prev.map((x) => x.id));
-          const next = [...prev];
-          for (const h of list) if (!ids.has(h.id)) next.push(h);
-          return next;
-        });
-      } catch (e) {
-        if (e?.name !== "AbortError") {
-          console.error(e);
-          toast.warning("Could not load public holidays for that year.");
-        }
-      }
+        // 2) ensure holidays for that year
+        const y = dayjs(arg.start).year();
+        if (loadedYearsRef.current.has(y)) return;
+        loadedYearsRef.current.add(y);
+
+        fetchHolidaysForYear(y)
+          .then((list) => {
+            setHolidays((prev) => {
+              const ids = new Set(prev.map((x) => x.id));
+              const next = [...prev];
+              for (const h of list) if (!ids.has(h.id)) next.push(h);
+              return next;
+            });
+          })
+          .catch((e) => {
+            if (e?.name !== "AbortError") {
+              console.error(e);
+              toast.warning("Could not load public holidays for that year.");
+            }
+          });
+      }, 150);
     },
-    [fetchHolidaysForYear]
+    [fetchFeed, fetchHolidaysForYear]
   );
 
   /* -----------------------------
@@ -302,7 +354,6 @@ const Calendar = () => {
     return `${String(hour).padStart(2, "0")}:00:00`;
   };
   const [scrollTime, setScrollTime] = useState(getScrollTime());
-
   useEffect(() => {
     const t = setInterval(() => setScrollTime(getScrollTime()), 60_000);
     return () => clearInterval(t);
@@ -311,8 +362,6 @@ const Calendar = () => {
   /* -----------------------------
      Prevent selecting/moving into the past
   ------------------------------ */
-  const todayStart = useMemo(() => dayjs().startOf("day"), []);
-
   const handleSelectAllow = useCallback((selectInfo) => {
     const start = dayjs(selectInfo.start);
     return !start.isBefore(dayjs().startOf("day"));
@@ -322,9 +371,12 @@ const Calendar = () => {
     const start = dayjs(dropInfo.start);
     const t0 = dayjs().startOf("day");
 
-    if (draggedEvent?.extendedProps?.category === "HOLIDAY" || draggedEvent?.display === "background") {
-      return false;
-    }
+    // holidays/background events blocked
+    if (isHolidayOrBackground(draggedEvent)) return false;
+
+    // non-manual feed items blocked
+    if (!isManualEvent(draggedEvent)) return false;
+
     return !start.isBefore(t0);
   }, []);
 
@@ -341,6 +393,8 @@ const Calendar = () => {
     }
 
     setMode("create");
+
+    // FullCalendar gives end as exclusive for allDay selections
     const end = selected.endStr ? dayjs(selected.endStr) : start.add(1, "hour");
 
     setForm({
@@ -349,14 +403,22 @@ const Calendar = () => {
       end,
       allDay: !!selected.allDay,
       category: "REMINDER",
-      color: "",
+      color: defaultColorByCategory("REMINDER"),
+      is_done: false,
     });
+
     setOpenDialog(true);
   };
 
   const openEditDialog = (clickInfo) => {
     const ev = clickInfo.event;
-    if (ev.extendedProps?.category === "HOLIDAY" || ev.display === "background") return;
+
+    // block holidays/background and non-manual feed items
+    if (isHolidayOrBackground(ev)) return;
+    if (!isManualEvent(ev)) {
+      showSnack("info", "This item comes from HR/Company feed and cannot be edited here.");
+      return;
+    }
 
     setMode("edit");
     setForm({
@@ -368,8 +430,10 @@ const Calendar = () => {
       start: dayjs(ev.start),
       end: ev.end ? dayjs(ev.end) : dayjs(ev.start).add(1, "hour"),
       allDay: !!ev.allDay,
-      color: ev.extendedProps?.color || ev.backgroundColor || "",
+      color: ev.extendedProps?.color || ev.backgroundColor || defaultColorByCategory(ev.extendedProps?.category),
+      is_done: !!ev.extendedProps?.is_done,
     });
+
     setOpenDialog(true);
   };
 
@@ -379,20 +443,36 @@ const Calendar = () => {
   };
 
   /* -----------------------------
-     Validation + CRUD
+     Validation + CRUD (manual only)
   ------------------------------ */
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     if (!form.title.trim()) return "Title is required.";
     if (!form.start) return "Start is required.";
-    if (!form.allDay && !form.end) return "End is required for timed events.";
-    if (form.end && dayjs(form.end).isBefore(dayjs(form.start))) return "End time must be after start time.";
+
+    if (!form.allDay) {
+      if (!form.end) return "End is required for timed events.";
+      if (dayjs(form.end).isBefore(dayjs(form.start))) return "End time must be after start time.";
+    }
+
     if (!["TODO", "REMINDER"].includes(form.category)) return "Invalid category.";
+
+    const presetValues = new Set(COLOR_PRESETS.map((x) => x.value));
+    if (!presetValues.has(form.color)) return "Please select a valid preset color.";
 
     const t0 = dayjs().startOf("day");
     if (dayjs(form.start).isBefore(t0)) return "You can't create or move events to past dates.";
 
     return null;
-  };
+  }, [form]);
+
+  const formError = useMemo(() => validateForm(), [validateForm]);
+
+  const refreshVisibleRange = useCallback(() => {
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    const view = api.view;
+    fetchFeed({ start: view.activeStart, end: view.activeEnd });
+  }, [fetchFeed]);
 
   const handleSave = async () => {
     const errMsg = validateForm();
@@ -401,31 +481,30 @@ const Calendar = () => {
 
     setBusy(true);
     try {
-      const fallbackColor = categoryColor(form.category, colors);
-
       const payload = {
         title: form.title,
         category: form.category,
         description: form.description || null,
         location: form.location || null,
-        start: form.start.toISOString(),
-        end: form.allDay ? null : form.end.toISOString(),
+        start: dayjs(form.start).toISOString(),
+        end: form.allDay ? null : dayjs(form.end).toISOString(),
         all_day: !!form.allDay,
-        color: form.color || fallbackColor,
+        color: form.color,
+        is_done: !!form.is_done,
       };
 
       if (mode === "create") {
-        await apiClient.post("/calendar/events", payload);
+        await apiClient.post(EVENTS_PATH, payload);
         toast.success("Event created.");
         showSnack("success", "Event created.");
       } else {
-        await apiClient.put(`/calendar/events/${form.id}`, payload);
+        await apiClient.put(`${EVENTS_PATH}/${form.id}`, payload);
         toast.success("Event updated.");
         showSnack("success", "Event updated.");
       }
 
       closeDialog();
-      fetchEvents();
+      refreshVisibleRange();
     } catch (error) {
       console.error("Calendar save failed:", error?.response?.data || error);
       const msg = extractLaravelError(error, "Failed to save event.");
@@ -445,14 +524,34 @@ const Calendar = () => {
 
     setBusy(true);
     try {
-      await apiClient.delete(`/calendar/events/${form.id}`);
+      await apiClient.delete(`${EVENTS_PATH}/${form.id}`);
       toast.success("Event deleted.");
       showSnack("success", "Event deleted.");
       closeDialog();
-      fetchEvents();
+      refreshVisibleRange();
     } catch (error) {
       console.error("Calendar delete failed:", error?.response?.data || error);
       const msg = extractLaravelError(error, "Failed to delete event.");
+      toast.error(msg);
+      showSnack("error", msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleDone = async (eventId, nextDone) => {
+    if (!apiClient) return showSnack("error", "API client not ready.");
+
+    setBusy(true);
+    try {
+      await apiClient.patch(`${EVENTS_PATH}/${eventId}/done`, { is_done: !!nextDone });
+
+      toast.success(nextDone ? "Marked done." : "Marked not done.");
+      showSnack("success", nextDone ? "Marked done." : "Marked not done.");
+      refreshVisibleRange();
+    } catch (error) {
+      console.error("Toggle done failed:", error?.response?.data || error);
+      const msg = extractLaravelError(error, "Failed to update done status.");
       toast.error(msg);
       showSnack("error", msg);
     } finally {
@@ -464,7 +563,8 @@ const Calendar = () => {
     const ev = changeInfo.event;
     if (!apiClient) return;
 
-    if (ev.extendedProps?.category === "HOLIDAY" || ev.display === "background") {
+    // block non-manual and holidays/background
+    if (!isManualEvent(ev) || isHolidayOrBackground(ev)) {
       changeInfo.revert();
       return;
     }
@@ -476,12 +576,14 @@ const Calendar = () => {
     }
 
     try {
-      await apiClient.patch(`/calendar/events/${ev.id}/move`, {
+      await apiClient.patch(`${EVENTS_PATH}/${ev.id}/move`, {
         start: ev.start?.toISOString(),
         end: ev.allDay ? null : ev.end?.toISOString(),
         all_day: !!ev.allDay,
       });
+
       showSnack("success", "Event moved.");
+      refreshVisibleRange();
     } catch (error) {
       showSnack("error", extractLaravelError(error, "Move failed. Reverting."));
       changeInfo.revert();
@@ -492,22 +594,24 @@ const Calendar = () => {
     const ev = changeInfo.event;
     if (!apiClient) return;
 
-    if (ev.extendedProps?.category === "HOLIDAY" || ev.display === "background") {
+    if (!isManualEvent(ev) || isHolidayOrBackground(ev)) {
       changeInfo.revert();
       return;
     }
 
     if (dayjs(ev.start).isBefore(dayjs().startOf("day"))) {
-      showSnack("warning", "You can't move events to past dates.");
+      showSnack("warning", "You can't resize events to past dates.");
       changeInfo.revert();
       return;
     }
 
     try {
-      await apiClient.patch(`/calendar/events/${ev.id}/resize`, {
+      await apiClient.patch(`${EVENTS_PATH}/${ev.id}/resize`, {
         end: ev.end?.toISOString(),
       });
+
       showSnack("success", "Event resized.");
+      refreshVisibleRange();
     } catch (error) {
       showSnack("error", extractLaravelError(error, "Resize failed. Reverting."));
       changeInfo.revert();
@@ -533,10 +637,25 @@ const Calendar = () => {
   ------------------------------ */
   const renderEventContent = useCallback((arg) => {
     const cat = arg.event.extendedProps?.category || "REMINDER";
-    const icon = cat === "TODO" ? "📝" : cat === "REMINDER" ? "⏰" : "🎉";
+    const isDone = !!arg.event.extendedProps?.is_done;
+
+    const icon =
+      cat === "TODO"
+        ? "📝"
+        : cat === "REMINDER"
+        ? "⏰"
+        : cat === "LEAVE"
+        ? "🌴"
+        : cat === "OFFDAY"
+        ? "🏖️"
+        : cat === "AWOL"
+        ? "⚠️"
+        : cat === "COMPANY"
+        ? "🏢"
+        : "🎉";
 
     return (
-      <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0, opacity: isDone ? 0.55 : 1 }}>
         <span>{icon}</span>
         <span
           style={{
@@ -544,6 +663,7 @@ const Calendar = () => {
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
+            textDecoration: isDone ? "line-through" : "none",
           }}
         >
           {arg.event.title}
@@ -555,9 +675,9 @@ const Calendar = () => {
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box m="20px" className="ligco-calendar">
-        <Header title="Calendar" subtitle="To-Dos, reminders, and holidays" />
+        <Header title="Calendar" subtitle="To-Dos, reminders, HR items, company events, and holidays" />
 
-        <Box display="flex" gap="15px">
+        <Box display="flex" gap="15px" sx={{ flexDirection: { xs: "column", md: "row" } }}>
           {/* SIDEBAR */}
           <Box
             flex="1 1 25%"
@@ -572,13 +692,14 @@ const Calendar = () => {
             }}
           >
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography variant="h5">Upcoming</Typography>
-              <Chip label={`${events.length} events`} size="small" />
+              <Typography variant="h5" fontWeight={900}>
+                Upcoming
+              </Typography>
+              <Chip label={`${events.length} items`} size="small" />
             </Stack>
 
             <Divider sx={{ my: 2 }} />
 
-            {/* Navigation controls incl. years */}
             <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
               <Button variant="outlined" onClick={gotoPrev} fullWidth>
                 Prev
@@ -605,49 +726,66 @@ const Calendar = () => {
             {fetching ? (
               <Box display="flex" alignItems="center" gap={2}>
                 <CircularProgress size={18} />
-                <Typography variant="body2">Loading events…</Typography>
+                <Typography variant="body2">Loading…</Typography>
               </Box>
             ) : (
               <List dense>
-                {upcoming.map((event) => (
-                  <ListItem
-                    key={event.id}
-                    sx={{
-                      backgroundColor: colors.primary[500],
-                      mb: 1,
-                      borderRadius: 2,
-                      borderLeft: `6px solid ${event.backgroundColor}`,
-                    }}
-                  >
-                    <ListItemText
-                      primary={
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography fontWeight={800}>{event.title}</Typography>
-                          <Chip
-                            size="small"
-                            label={event.extendedProps?.category || "REMINDER"}
-                            sx={{ fontWeight: 800 }}
-                          />
-                        </Stack>
-                      }
-                      secondary={
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                          {formatDate(event.start, {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </Typography>
-                      }
-                    />
-                  </ListItem>
-                ))}
+                {upcoming.map((event) => {
+                  const isDone = !!event.extendedProps?.is_done;
+                  const cat = event.extendedProps?.category || "REMINDER";
+                  const source = event.extendedProps?.source || "manual";
+                  const manual = isManualSource(source);
+                  const isAllDay = !!event.allDay;
+
+                  return (
+                    <ListItem
+                      key={event.id}
+                      sx={{
+                        backgroundColor: colors.primary[500],
+                        mb: 1,
+                        borderRadius: 2,
+                        borderLeft: `6px solid ${event.backgroundColor}`,
+                        opacity: isDone ? 0.7 : 1,
+                      }}
+                    >
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <Typography fontWeight={900} sx={{ textDecoration: isDone ? "line-through" : "none" }}>
+                              {event.title}
+                            </Typography>
+
+                            <Chip size="small" label={cat} sx={{ fontWeight: 800 }} />
+                            <Chip size="small" variant="outlined" label={source} sx={{ opacity: 0.8 }} />
+
+                            {manual && (cat === "TODO" || cat === "REMINDER") && (
+                              <Chip
+                                size="small"
+                                label={isDone ? "Done" : "Open"}
+                                color={isDone ? "success" : "default"}
+                                variant={isDone ? "filled" : "outlined"}
+                                onClick={() => toggleDone(event.id, !isDone)}
+                                disabled={busy}
+                                sx={{ cursor: "pointer" }}
+                              />
+                            )}
+                          </Stack>
+                        }
+                        secondary={
+                          <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                            {formatDate(event.start, isAllDay
+                              ? { year: "numeric", month: "short", day: "numeric" }
+                              : { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </Typography>
+                        }
+                      />
+                    </ListItem>
+                  );
+                })}
 
                 {upcoming.length === 0 && (
                   <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                    No upcoming events.
+                    No upcoming items.
                   </Typography>
                 )}
               </List>
@@ -655,16 +793,16 @@ const Calendar = () => {
 
             <Divider sx={{ my: 2 }} />
 
-            <Tooltip title="Reload events">
-              <Button variant="outlined" onClick={fetchEvents} fullWidth disabled={fetching}>
+            <Tooltip title="Reload feed">
+              <Button variant="outlined" onClick={refreshVisibleRange} fullWidth disabled={fetching}>
                 Refresh
               </Button>
             </Tooltip>
 
             <Alert severity="info" sx={{ mt: 2 }}>
-              Holidays auto-load for Kenya. {holidaysLoading ? "Loading…" : `(${holidays.length} loaded)`}
+              Kenya public holidays auto-load. {holidaysLoading ? "Loading…" : `(${holidays.length} loaded)`}
               <br />
-              Past dates are blocked (create/move/resize).
+              Past dates are blocked (create/move/resize). Only manual items can be edited.
             </Alert>
           </Box>
 
@@ -677,50 +815,72 @@ const Calendar = () => {
               p: 2,
               borderRadius: 2,
               boxShadow: 2,
-              opacity: fetching ? 0.9 : 1,
             }}
           >
-            <FullCalendar
-              ref={calendarRef}
-              height="75vh"
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
-              headerToolbar={{
-                left: "prevYear,prev,next,nextYear today",
-                center: "title",
-                right: "dayGridMonth,timeGridWeek,timeGridDay,listMonth",
-              }}
-              initialView="dayGridMonth"
-              timeZone="local"
-              editable
-              selectable
-              selectMirror
-              dayMaxEvents
-              events={mergedEvents}
-              eventContent={renderEventContent}
-              select={openCreateDialog}
-              selectAllow={handleSelectAllow}
-              eventAllow={handleEventAllow}
-              eventClick={openEditDialog}
-              eventDrop={handleEventDrop}
-              eventResize={handleEventResize}
-              datesSet={handleDatesSet}
-              nowIndicator
-              scrollTime={scrollTime}
-              slotMinTime="06:00:00"
-              slotMaxTime="22:00:00"
-            />
+            <Box sx={{ position: "relative" }}>
+              {fetching && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backdropFilter: "blur(2px)",
+                    backgroundColor: "rgba(0,0,0,0.06)",
+                    borderRadius: 2,
+                  }}
+                >
+                  <Stack alignItems="center" spacing={1}>
+                    <CircularProgress size={26} />
+                    <Typography variant="body2">Loading calendar…</Typography>
+                  </Stack>
+                </Box>
+              )}
+
+              <FullCalendar
+                ref={calendarRef}
+                height="75vh"
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
+                headerToolbar={{
+                  left: "prevYear,prev,next,nextYear today",
+                  center: "title",
+                  right: "dayGridMonth,timeGridWeek,timeGridDay,listMonth",
+                }}
+                initialView="dayGridMonth"
+                timeZone="local"
+                editable
+                selectable
+                selectMirror
+                dayMaxEvents
+                events={mergedEvents}
+                eventContent={renderEventContent}
+                select={openCreateDialog}
+                selectAllow={handleSelectAllow}
+                eventAllow={handleEventAllow}
+                eventClick={openEditDialog}
+                eventDrop={handleEventDrop}
+                eventResize={handleEventResize}
+                datesSet={handleDatesSet}
+                nowIndicator
+                scrollTime={scrollTime}
+                slotMinTime="06:00:00"
+                slotMaxTime="22:00:00"
+              />
+            </Box>
           </Box>
         </Box>
 
-        {/* CREATE / EDIT DIALOG */}
+        {/* CREATE / EDIT DIALOG (manual events only) */}
         <Dialog open={openDialog} onClose={closeDialog} fullWidth maxWidth="sm">
           <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <Box>
-              <Typography variant="h6" fontWeight={800}>
+              <Typography variant="h6" fontWeight={900}>
                 {mode === "create" ? "Create event" : "Edit event"}
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                Category: To-Do or Reminder (no past dates)
+                Manual items only. To-Do/Reminder can be marked done.
               </Typography>
             </Box>
             <IconButton onClick={closeDialog} disabled={busy}>
@@ -742,7 +902,15 @@ const Calendar = () => {
                 select
                 label="Category"
                 value={form.category}
-                onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+                onChange={(e) => {
+                  const nextCat = e.target.value;
+                  setForm((p) => ({
+                    ...p,
+                    category: nextCat,
+                    // snap to default per category (consistent + predictable)
+                    color: defaultColorByCategory(nextCat),
+                  }));
+                }}
                 fullWidth
               >
                 {CATEGORIES.map((c) => (
@@ -768,52 +936,90 @@ const Calendar = () => {
                 minRows={3}
               />
 
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <DateTimePicker
-                  label="Start"
-                  value={form.start}
-                  onChange={(v) => setForm((p) => ({ ...p, start: v }))}
-                  sx={{ flex: 1 }}
-                />
-                <DateTimePicker
-                  label="End"
-                  value={form.end}
-                  onChange={(v) => setForm((p) => ({ ...p, end: v }))}
-                  sx={{ flex: 1 }}
-                  disabled={form.allDay}
-                />
-              </Stack>
-
-              <Stack direction="row" spacing={2} alignItems="center">
-                <TextField
-                  label="Color"
-                  type="color"
-                  value={form.color || categoryColor(form.category, colors)}
-                  onChange={(e) => setForm((p) => ({ ...p, color: e.target.value }))}
-                  sx={{ width: 140 }}
-                  InputLabelProps={{ shrink: true }}
-                />
-
+              {/* All-day toggle + Done toggle */}
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                 <Chip
                   label={form.allDay ? "All day" : "Timed"}
                   onClick={() =>
                     setForm((p) => {
                       const nextAllDay = !p.allDay;
-                      // if turning timed back on and end missing, ensure end exists
-                      const nextEnd =
-                        !nextAllDay && (!p.end || dayjs(p.end).isBefore(dayjs(p.start)))
-                          ? dayjs(p.start).add(1, "hour")
-                          : p.end;
-                      return { ...p, allDay: nextAllDay, end: nextEnd };
+                      const nextStart = p.start || dayjs();
+                      const nextEnd = nextAllDay ? nextStart : (p.end && !dayjs(p.end).isBefore(nextStart) ? p.end : nextStart.add(1, "hour"));
+                      return { ...p, allDay: nextAllDay, start: nextStart, end: nextEnd };
                     })
                   }
                   variant={form.allDay ? "filled" : "outlined"}
                   disabled={busy}
+                  sx={{ cursor: "pointer" }}
                 />
+
+                {(form.category === "TODO" || form.category === "REMINDER") && (
+                  <Chip
+                    label={form.is_done ? "Done" : "Open"}
+                    onClick={() => setForm((p) => ({ ...p, is_done: !p.is_done }))}
+                    color={form.is_done ? "success" : "default"}
+                    variant={form.is_done ? "filled" : "outlined"}
+                    disabled={busy}
+                    sx={{ cursor: "pointer" }}
+                  />
+                )}
               </Stack>
 
-              {form.allDay && <Alert severity="info">All-day events don’t require an end time.</Alert>}
-              <Alert severity="warning">Past dates are not allowed.</Alert>
+              {/* Date pickers: DatePicker for all-day, DateTimePicker for timed */}
+              {form.allDay ? (
+                <DatePicker
+                  label="Date"
+                  value={form.start}
+                  onChange={(v) => setForm((p) => ({ ...p, start: v || dayjs(), end: v || dayjs() }))}
+                />
+              ) : (
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <DateTimePicker
+                    label="Start"
+                    value={form.start}
+                    onChange={(v) => setForm((p) => ({ ...p, start: v || dayjs() }))}
+                    sx={{ flex: 1 }}
+                  />
+                  <DateTimePicker
+                    label="End"
+                    value={form.end}
+                    onChange={(v) => setForm((p) => ({ ...p, end: v || dayjs().add(1, "hour") }))}
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
+              )}
+
+              {/* PRESET COLOR CHIPS */}
+              <Box>
+                <Typography variant="body2" sx={{ mb: 1, fontWeight: 900 }}>
+                  Color
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  {COLOR_PRESETS.map((c) => {
+                    const selected = form.color === c.value;
+                    return (
+                      <Chip
+                        key={c.value}
+                        label={c.label}
+                        onClick={() => setForm((p) => ({ ...p, color: c.value }))}
+                        variant={selected ? "filled" : "outlined"}
+                        disabled={busy}
+                        sx={{
+                          cursor: "pointer",
+                          borderColor: c.value,
+                          ...(selected ? { outline: `2px solid ${c.value}` } : {}),
+                        }}
+                      />
+                    );
+                  })}
+                </Stack>
+                <Typography variant="caption" sx={{ display: "block", mt: 1, opacity: 0.75 }}>
+                  Only preset colors are allowed.
+                </Typography>
+              </Box>
+
+              {!!formError && <Alert severity="warning">{formError}</Alert>}
+              <Alert severity="info">Past dates are blocked. HR/company items are read-only.</Alert>
             </Stack>
           </DialogContent>
 
@@ -827,8 +1033,13 @@ const Calendar = () => {
             <Button variant="outlined" onClick={closeDialog} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="contained" onClick={handleSave} disabled={busy}>
-              {busy ? "Saving..." : "Save"}
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={busy || !!formError}
+              startIcon={busy ? <CircularProgress size={16} /> : null}
+            >
+              Save
             </Button>
           </DialogActions>
         </Dialog>
@@ -844,3 +1055,4 @@ const Calendar = () => {
 };
 
 export default Calendar;
+
