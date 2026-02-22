@@ -163,109 +163,166 @@ class PayrollController extends Controller
      * Close the payroll period for a given month.
      */
     public function closeMonth(Request $request)
-    {
-        Gate::authorize('manage-payroll');
-        $validated = $request->validate(['month_end_date' => 'required|date']);
-        $company = auth()->user()->company;
-        $monthEndDate = Carbon::parse($validated['month_end_date'])->endOfMonth();
+{
+    Gate::authorize('manage-payroll');
 
-        // Get the start of the *current* open month, then get its end date.
-        $expectedMonthEndDate = $this->getOpenMonthDate()->endOfMonth();
+    $validated = $request->validate(['month_end_date' => 'required|date']);
+    $company = auth()->user()->company;
 
-        if (!$monthEndDate->isSameDay($expectedMonthEndDate)) {
-             return response()->json(['message' => 'Invalid payroll period. The next period to close should end on ' . $expectedMonthEndDate->format('F d, Y')], 422);
-        }
+    // ✅ normalize to DATE string
+    $monthEndDate = Carbon::parse($validated['month_end_date'])->endOfMonth()->toDateString();
+    $monthEnd = Carbon::parse($monthEndDate);
 
-        $payslips = Payslip::where('company_id', $company->id)->where('pay_period_end', $monthEndDate->toDateString())->with('user.employeeProfile')->get();
-        $activeEmployeesCount = User::where('company_id', $company->id)->whereHas('employeeProfile', fn($q) => $q->where('status', 'active'))->count();
+    $expectedMonthEndDate = $this->getOpenMonthDate()->endOfMonth()->toDateString();
+    $expectedMonthEnd = Carbon::parse($expectedMonthEndDate);
 
-        if ($payslips->isEmpty()) {
-             return response()->json(['message' => "Cannot close month. No payslips found for {$monthEndDate->format('F Y')}. Please generate payslips first."], 409);
-        }
-        if ($payslips->count() !== $activeEmployeesCount) {
-             return response()->json(['message' => "Cannot close month. Found {$payslips->count()} payslips but there are {$activeEmployeesCount} active employees. Ensure all payslips are generated."], 409);
-        }
-
-        try {
-            $archive = DB::transaction(function () use ($company, $monthEndDate, $payslips) {
-                $summary = [
-                    'total_gross_income' => $payslips->sum('gross_income'),
-                    'total_deductions' => $payslips->sum(function($p) {
-                        $custom_deductions = 0;
-                        $deductionsData = $p->deductions ?? [];
-                        if (is_string($deductionsData)) { try { $deductionsData = json_decode($deductionsData, true) ?? []; } catch (\Exception $e) {$deductionsData = [];} }
-                        if (is_array($deductionsData) || is_object($deductionsData)) {
-                             $custom_deductions = collect((array)$deductionsData)->sum(fn($value) => is_numeric($value) ? (float)$value : 0);
-                        }
-                         return ($p->tax_paid ?? 0) + ($p->loan_repayment ?? 0) + ($p->advance_repayment ?? 0) + $custom_deductions;
-                    }),
-                    'total_net_pay' => $payslips->sum('net_pay'),
-                    'payslip_count' => $payslips->count(),
-                ];
-
-                 $detailedPayslipData = $payslips->map(function ($payslip) {
-                     $profile = $payslip->user->employeeProfile;
-                     $allowances = $payslip->allowances;
-                     if (is_string($allowances)) { try { $allowances = json_decode($allowances, true) ?? []; } catch (\Exception $e) { $allowances = []; }}
-                     elseif (!is_array($allowances) && !is_object($allowances)) { $allowances = []; }
-                     $deductions = $payslip->deductions;
-                      if (is_string($deductions)) { try { $deductions = json_decode($deductions, true) ?? []; } catch (\Exception $e) { $deductions = []; }}
-                     elseif (!is_array($deductions) && !is_object($deductions)) { $deductions = []; }
-                     return [
-                         'employee_id' => $payslip->user->id,
-                         'employee_name' => $payslip->user->name,
-                         'gross_income' => $payslip->gross_income,
-                         'allowances' => (array)$allowances,
-                         'statutory_deductions' => (array)$deductions,
-                         'tax_paid' => $payslip->tax_paid,
-                         'loan_repayment' => $payslip->loan_repayment,
-                         'advance_repayment' => $payslip->advance_repayment,
-                         'net_pay' => $payslip->net_pay,
-                         'bank_details' => [ 'bank_name' => $profile->bank_name ?? null, 'bank_account_number' => $profile->bank_account_number ?? null ]
-                     ];
-                 });
-
-                $accounts = ChartOfAccount::where('company_id', $company->id)->whereIn('account_name', ['Salaries Expense', 'Salaries Payable', 'Tax Payable'])->get()->keyBy('account_name');
-                if($accounts->count() < 3) throw new \Exception('Required accounting accounts (Salaries Expense, Salaries Payable, Tax Payable) are not set up.');
-
-                $archive = PayrollArchive::create([
-                    'company_id' => $company->id,
-                    'report_period_end' => $monthEndDate,
-                    'summary' => json_encode($summary),
-                    'payslip_data' => $detailedPayslipData->toJson(),
-                ]);
-
-                 $journalEntry = JournalEntry::create([
-                    'company_id' => $company->id, 'transaction_date' => $monthEndDate,
-                    'description' => 'Payroll for ' . $monthEndDate->format('F Y'),
-                    'referenceable_id' => $archive->id, 'referenceable_type' => PayrollArchive::class,
-                 ]);
-                 $salariesExpenseId = $accounts['Salaries Expense']?->id;
-                 $salariesPayableId = $accounts['Salaries Payable']?->id;
-                 $taxPayableId = $accounts['Tax Payable']?->id;
-                 if (!$salariesExpenseId || !$salariesPayableId || !$taxPayableId) { throw new \Exception('One or more required accounting accounts are missing.'); }
-                 $total_tax_and_other_deductions = $summary['total_deductions'] - $payslips->sum('loan_repayment') - $payslips->sum('advance_repayment');
-                 $journalEntry->lines()->createMany([
-                    ['chart_of_account_id' => $salariesExpenseId, 'debit' => $summary['total_gross_income']],
-                    ['chart_of_account_id' => $salariesPayableId, 'credit' => $summary['total_net_pay']],
-                    ['chart_of_account_id' => $taxPayableId, 'credit' => $total_tax_and_other_deductions],
-                 ]);
-
-                $archive->update(['journal_entry_id' => $journalEntry->id]);
-                $company->update(['payroll_last_closed_month' => $monthEndDate]);
-
-                return $archive;
-            });
-            return response()->json(['message' => 'Payroll for ' . $monthEndDate->format('F Y') . ' closed and archived.', 'archive' => $archive], 201);
-
-        } catch (Throwable $e) {
-            Log::error('Failed to close payroll month: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
-             if (str_contains($e->getMessage(), 'Required accounting accounts')) {
-                 return response()->json(['message' => $e->getMessage()], 422);
-            }
-             return response()->json(['message' => 'An unexpected error occurred while closing the payroll period.'], 500);
-        }
+    if (!$monthEnd->isSameDay($expectedMonthEnd)) {
+        return response()->json([
+            'message' => 'Invalid payroll period. The next period to close should end on ' .
+                $expectedMonthEnd->format('F d, Y')
+        ], 422);
     }
+
+    // ✅ Idempotency: if archive exists, sync company + return 200
+    $existingArchive = PayrollArchive::where('company_id', $company->id)
+        ->whereDate('report_period_end', $monthEndDate)
+        ->first();
+
+    if ($existingArchive) {
+        $company->forceFill(['payroll_last_closed_month' => $monthEndDate])->save();
+
+        return response()->json([
+            'message' => 'Payroll for ' . $monthEnd->format('F Y') . ' is already closed. State synced.',
+            'archive' => $existingArchive,
+        ], 200);
+    }
+
+    $payslips = Payslip::where('company_id', $company->id)
+        ->whereDate('pay_period_end', $monthEndDate)
+        ->with('user.employeeProfile')
+        ->get();
+
+    $activeEmployeesCount = User::where('company_id', $company->id)
+        ->whereHas('employeeProfile', fn($q) => $q->where('status', 'active'))
+        ->count();
+
+    if ($payslips->isEmpty()) {
+        return response()->json([
+            'message' => "Cannot close month. No payslips found for {$monthEnd->format('F Y')}. Please generate payslips first."
+        ], 409);
+    }
+
+    if ($payslips->count() !== $activeEmployeesCount) {
+        return response()->json([
+            'message' => "Cannot close month. Found {$payslips->count()} payslips but there are {$activeEmployeesCount} active employees. Ensure all payslips are generated."
+        ], 409);
+    }
+
+    try {
+        $archive = DB::transaction(function () use ($company, $monthEndDate, $monthEnd, $payslips) {
+
+            $summary = [
+                'total_gross_income' => $payslips->sum('gross_income'),
+                'total_deductions' => $payslips->sum(function ($p) {
+                    $deductionsData = $p->deductions ?? []; // cast => array
+                    $custom = collect((array)$deductionsData)->sum(fn($v) => is_numeric($v) ? (float)$v : 0);
+
+                    return (float)($p->tax_paid ?? 0)
+                        + (float)($p->loan_repayment ?? 0)
+                        + (float)($p->advance_repayment ?? 0)
+                        + (float)$custom;
+                }),
+                'total_net_pay' => $payslips->sum('net_pay'),
+                'payslip_count' => $payslips->count(),
+            ];
+
+            $detailedPayslipData = $payslips->map(function ($payslip) {
+                $profile = $payslip->user->employeeProfile;
+
+                return [
+                    'employee_id' => $payslip->user->id,
+                    'employee_name' => $payslip->user->name,
+                    'gross_income' => $payslip->gross_income,
+                    'allowances' => (array)($payslip->allowances ?? []),
+                    'statutory_deductions' => (array)($payslip->deductions ?? []),
+                    'tax_paid' => $payslip->tax_paid,
+                    'loan_repayment' => $payslip->loan_repayment,
+                    'advance_repayment' => $payslip->advance_repayment,
+                    'net_pay' => $payslip->net_pay,
+                    'bank_details' => [
+                        'bank_name' => $profile->bank_name ?? null,
+                        'bank_account_number' => $profile->bank_account_number ?? null,
+                    ],
+                ];
+            });
+
+            $accounts = ChartOfAccount::where('company_id', $company->id)
+                ->whereIn('account_name', ['Salaries Expense', 'Salaries Payable', 'Tax Payable'])
+                ->get()
+                ->keyBy('account_name');
+
+            if ($accounts->count() < 3) {
+                throw new \Exception('Required accounting accounts (Salaries Expense, Salaries Payable, Tax Payable) are not set up.');
+            }
+
+            // ✅ create archive (DATE)
+            $archive = PayrollArchive::create([
+                'company_id' => $company->id,
+                'report_period_end' => $monthEndDate,
+                'summary' => json_encode($summary),
+                'payslip_data' => $detailedPayslipData->toJson(),
+            ]);
+
+            $journalEntry = JournalEntry::create([
+                'company_id' => $company->id,
+                'transaction_date' => $monthEndDate,
+                'description' => 'Payroll for ' . $monthEnd->format('F Y'),
+                'referenceable_id' => $archive->id,
+                'referenceable_type' => PayrollArchive::class,
+            ]);
+
+            $salariesExpenseId = $accounts['Salaries Expense']?->id;
+            $salariesPayableId = $accounts['Salaries Payable']?->id;
+            $taxPayableId = $accounts['Tax Payable']?->id;
+
+            if (!$salariesExpenseId || !$salariesPayableId || !$taxPayableId) {
+                throw new \Exception('One or more required accounting accounts are missing.');
+            }
+
+            $total_tax_and_other_deductions =
+                (float)$summary['total_deductions']
+                - (float)$payslips->sum('loan_repayment')
+                - (float)$payslips->sum('advance_repayment');
+
+            $journalEntry->lines()->createMany([
+                ['chart_of_account_id' => $salariesExpenseId, 'debit' => $summary['total_gross_income']],
+                ['chart_of_account_id' => $salariesPayableId, 'credit' => $summary['total_net_pay']],
+                ['chart_of_account_id' => $taxPayableId, 'credit' => $total_tax_and_other_deductions],
+            ]);
+
+            $archive->update(['journal_entry_id' => $journalEntry->id]);
+
+            // ✅ update company AFTER successful archive creation
+            $company->forceFill(['payroll_last_closed_month' => $monthEndDate])->save();
+
+            return $archive;
+        });
+
+        return response()->json([
+            'message' => 'Payroll for ' . $monthEnd->format('F Y') . ' closed and archived.',
+            'archive' => $archive
+        ], 201);
+
+    } catch (Throwable $e) {
+        Log::error('Failed to close payroll month: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
+
+        if (str_contains($e->getMessage(), 'Required accounting accounts')) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['message' => 'An unexpected error occurred while closing the payroll period.'], 500);
+    }
+}
 
 
      /**
