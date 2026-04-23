@@ -203,7 +203,7 @@ function App() {
                 {/* Recruitment */}
                 <Route path="/recruitment/openings" element={<JobOpeningsList />} />
                 <Route
-                  path="/recruitment/add-opening"
+                  path="/recruitment/job-openings/new-opening"
                   element={<AddJobOpeningForm />}
                 />
                 <Route

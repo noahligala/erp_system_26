@@ -171,7 +171,7 @@ const JobOpeningsList = () => {
           variant="contained"
           color="primary"
           startIcon={<AddIcon />}
-          onClick={() => (window.location.href = "/hrm/job-openings/new")}
+          onClick={() => (window.location.href = "/recruitment/job-openings/new-opening")}
         >
           New Opening
         </Button>
