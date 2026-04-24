@@ -66,21 +66,21 @@ import StockAdjustment from "./scenes/accounting/inventory/StockAdjustment";
 import CashFlowStatement from "./scenes/accounting/reports/CashFlowStatement";
 import Budget from "./scenes/accounting/reports/Budget.";
 
+// --- NEW IMPORTS: Public Careers Pages ---
+// Adjust these import paths based on where you saved the files
+import Careers from "./scenes/hrm/recruitment/Careers"; 
+import JobApply from "./scenes/hrm/recruitment/JobApply";
+
 // --- Layout for Protected Routes ---
 const ProtectedLayout = ({ theme, isSidebar, setIsSidebar }) => {
   const { isAuthenticated } = useAuth();
   
-  // Define sidebar width based on the SidebarComponent logic (80px collapsed, 270px expanded)
-  const sidebarWidth = isSidebar ? '270px' : '80px'; 
-  const transitionDuration = '0.3s'; // Matches the transition set in SidebarComponent.jsx
-
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <Box display="flex" height="100vh" width="100%">
-      {/* Sidebar is rendered, its width is controlled internally */}
       <Box
           sx={{
             width: isSidebar ? "270px" : "80px",
@@ -93,7 +93,6 @@ const ProtectedLayout = ({ theme, isSidebar, setIsSidebar }) => {
           <Sidebar isSidebar={isSidebar} setIsSidebar={setIsSidebar} />
         </Box>
 
-      {/* --- Main Content (FIX APPLIED HERE) --- */}
       <Box
           component="main"
           sx={{
@@ -105,7 +104,6 @@ const ProtectedLayout = ({ theme, isSidebar, setIsSidebar }) => {
             transition: "margin 0.3s ease-in-out, padding 0.3s ease-in-out",
           }}
         >
-        {/* --- Sticky Topbar --- */}
         <Box
           sx={{
             position: "sticky",
@@ -117,12 +115,10 @@ const ProtectedLayout = ({ theme, isSidebar, setIsSidebar }) => {
           <Topbar setIsSidebar={setIsSidebar} />
         </Box>
 
-        {/* --- Scrollable Content --- */}
         <Box sx={{ flexGrow: 1, overflowY: "auto", p: 2 }}>
-          <Outlet /> {/* Child routes will render here */}
+          <Outlet /> 
         </Box>
 
-        {/* --- Fixed Footer --- */}
         <Box
           sx={{
             position: "sticky",
@@ -164,7 +160,10 @@ function App() {
             <CssBaseline />
 
             <Routes>
-              {/* Public routes */}
+{/* --- PUBLIC ROUTES (No Login Required) --- */}
+              <Route path="/careers/:companyId" element={<Careers />} />
+              <Route path="/careers/:companyId/:jobId/apply" element={<JobApply />} />
+              
               <Route
                 path="/login"
                 element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
@@ -176,7 +175,7 @@ function App() {
                 }
               />
 
-              {/* Protected routes */}
+              {/* --- PROTECTED ROUTES (Requires Login) --- */}
               <Route
                 element={
                   <ProtectedLayout
@@ -206,9 +205,7 @@ function App() {
                   path="/recruitment/job-openings/new-opening"
                   element={<AddJobOpeningForm />}
                 />
-                <Route
-                  path="/recruitment/edit-opening/:id"
-                  element={<EditJobOpeningForm />}
+                <Route path="/recruitment/job-openings/:id/edit" element={<EditJobOpeningForm />} 
                 />
                 <Route
                   path="/recruitment/applicants/:jobId?"
@@ -266,7 +263,6 @@ function App() {
                 <Route path="/accounts/payslips" element={<Payslips />} />
                 <Route path="/accounts/reports/fixedassets" element={<FixedAssets />} />
                 
-                {/* 💡 --- FIX: Changed path to match sidebar --- */}
                 <Route path="/accounts/reconciliation/bank" element={<BankReconciliation />} />
                 {/* --} New Financial Archive Routes ---- */}
                 <Route path="/accounting/reports/archive" element={<ArchivedReportsList />} />

@@ -2,6 +2,7 @@ import axios from "axios";
 import { secureStore } from "../utils/storage";
 import { toast } from "react-toastify";
 
+// Adjust this URL if your backend runs on a different port/host
 const API_BASE_URL = "http://localhost:8000/api";
 
 export const apiClient = axios.create({
@@ -13,6 +14,13 @@ export const apiClient = axios.create({
 // ------------------- REQUEST INTERCEPTOR -------------------
 apiClient.interceptors.request.use(
   (config) => {
+    // 💡 OPTIMIZATION: Do not attach Authorization headers for public routes
+    // This prevents Laravel from throwing a 401 if a guest browses the careers 
+    // page with an old/expired token in their browser storage.
+    if (config.url && config.url.includes('/public/')) {
+      return config;
+    }
+
     const token = secureStore.get("accessToken");
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
@@ -63,7 +71,7 @@ apiClient.interceptors.response.use(
 
       if (!refreshToken) {
         isRefreshing = false;
-        // Dispatch event for AuthProvider to handle logout
+        // Dispatch event for AuthProvider to handle logout silently/gracefully
         window.dispatchEvent(new Event("auth-logout")); 
         return Promise.reject(error);
       }
@@ -74,7 +82,7 @@ apiClient.interceptors.response.use(
           refresh_token: refreshToken,
         });
         
-        // --- This now expects the full user payload ---
+        // This expects the full user payload from your backend
         const payload = response.data.data;
         if (!payload?.token?.access_token || !payload?.user) {
           throw new Error("Invalid refresh response");
@@ -87,7 +95,7 @@ apiClient.interceptors.response.use(
         secureStore.set("accessToken", access_token, rememberMe);
         secureStore.set("refreshToken", refresh_token, true);
         
-        // Re-set user data (as implemented in AuthProvider fix)
+        // Re-set user data (as implemented in AuthProvider)
         secureStore.set("user_data", payload.user, rememberMe);
         secureStore.set("secret_key", payload.user.secret_key, rememberMe);
         secureStore.set("roles", payload.user.roles || [], rememberMe);
@@ -109,8 +117,8 @@ apiClient.interceptors.response.use(
         isRefreshing = false;
       }
     }
-       // For other errors (500, 404, etc.), just let them fall through
+    
+    // For other errors (500, 404, etc.), just let them fall through
     return Promise.reject(error);
   }
 );
-
