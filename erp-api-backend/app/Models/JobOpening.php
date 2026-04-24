@@ -17,6 +17,11 @@ class JobOpening extends Model
         'title',
         'description',
         'department_id',
+        'department',   // <-- Add this
+        'location',
+        'type',          // <-- Add this
+        'requirements',  // <-- Add this
+        'benefits',      // <-- Add this
         'job_title_id',
         'status',
         'positions_to_fill',

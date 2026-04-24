@@ -37,11 +37,26 @@ use App\Http\Controllers\Inventory\StockAdjustmentController;
 use App\Http\Controllers\Calendar\CalendarController;
 use App\Http\Controllers\Calendar\CalendarFeedController;
 use App\Http\Controllers\Calendar\CalendarEventController;
+use App\Http\Controllers\PublicCareersController;
 
 // --- PUBLIC ROUTES ---
 Route::get('/plans', fn () => SubscriptionPlan::all());
 Route::post('/register-subscribe', [SignupController::class, 'registerAndSubscribe']);
 Route::post('/login', [LoginController::class, 'login']);
+
+//--Job Listings and Applicants (Publicly Accessible)---//
+// 💡 FIX: Wrapped in the 'public' prefix group
+Route::prefix('public')->group(function () {
+    // 1. Get open jobs for a specific company
+    Route::get('/companies/{company_id}/jobs', [App\Http\Controllers\PublicCareersController::class, 'index']);
+
+    // 2. Get a specific job detail
+    Route::get('/companies/{company_id}/jobs/{job_opening_id}', [App\Http\Controllers\PublicCareersController::class, 'show']);
+
+    // 3. Submit a new application
+    Route::post('/apply', [App\Http\Controllers\PublicCareersController::class, 'storeApplication']);
+});
+//-- End of Job Listings and Applicants --//
 
 // --- PROTECTED ROUTES ---
 Route::middleware('auth:sanctum')->group(function () {
@@ -226,5 +241,8 @@ Route::middleware('auth:sanctum')->group(function () {
         $n->markAsRead();
         return ['ok' => true];
     });
+
+    Route::post('/applicants/{applicant}/hire', [ApplicantController::class, 'hire']);
+    Route::apiResource('applicants', ApplicantController::class); // Your existing resource route
 
 });

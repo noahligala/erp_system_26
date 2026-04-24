@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Applicant;
 use App\Models\JobOpening;
+// use App\Models\Employee; // Uncomment if creating an employee record automatically
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -59,7 +60,6 @@ class ApplicantController extends Controller
     {
         $user = $request->user();
         if (!$user->company_id) { return response()->json(['status' => 'error', 'message' => 'User not associated.'], 403); }
-         // Add Auth checks
 
         $validator = Validator::make($request->all(), [
             'job_opening_id' => ['required', Rule::exists('job_openings', 'id')->where('company_id', $user->company_id)],
@@ -67,7 +67,6 @@ class ApplicantController extends Controller
             'last_name' => 'required|string|max:255',
             'email' => [
                 'required','email','max:255',
-                 // Unique applicant per job opening within the company
                  Rule::unique('applicants')->where(function ($query) use ($user, $request) {
                     return $query->where('company_id', $user->company_id)
                                  ->where('job_opening_id', $request->job_opening_id);
@@ -77,7 +76,7 @@ class ApplicantController extends Controller
             'source' => 'nullable|string|max:100',
             'status' => ['nullable', Rule::in(['new', 'screening', 'interviewing', 'offer_extended', 'offer_accepted', 'hired', 'rejected', 'withdrawn'])],
             'notes' => 'nullable|string',
-            'resume' => 'nullable|file|mimes:pdf,doc,docx|max:5120', // Example: PDF/Word, max 5MB
+            'resume' => 'nullable|file|mimes:pdf,doc,docx|max:5120',
         ]);
 
         if ($validator->fails()) {
@@ -89,12 +88,10 @@ class ApplicantController extends Controller
 
         DB::beginTransaction();
         try {
-            // Handle file upload
             if ($request->hasFile('resume')) {
                 $file = $request->file('resume');
                 $resumeFilename = $file->getClientOriginalName();
-                // Store in a company-specific folder within 'resumes' directory
-                $resumePath = $file->store("companies/{$user->company_id}/resumes", 'private'); // Use 'private' disk if configured
+                $resumePath = $file->store("companies/{$user->company_id}/resumes", 'private');
 
                  if (!$resumePath) {
                     throw new \Exception("Could not store resume file.");
@@ -104,17 +101,16 @@ class ApplicantController extends Controller
             $applicant = Applicant::create(array_merge($validator->validated(), [
                 'company_id' => $user->company_id,
                 'added_by' => $user->id,
-                'status' => $request->input('status', 'new'), // Default status
+                'status' => $request->input('status', 'new'),
                 'resume_path' => $resumePath,
                 'resume_filename' => $resumeFilename,
             ]));
 
             DB::commit();
-             return response()->json(['status' => 'success', 'data' => $applicant->load('jobOpening:id,title')], 201);
+            return response()->json(['status' => 'success', 'data' => $applicant->load('jobOpening:id,title')], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
-             // Clean up uploaded file if DB transaction failed
              if ($resumePath && Storage::disk('private')->exists($resumePath)) {
                  Storage::disk('private')->delete($resumePath);
              }
@@ -132,7 +128,6 @@ class ApplicantController extends Controller
         if (!$user->company_id || $applicant->company_id !== $user->company_id) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
         }
-        // Add auth checks
 
         try {
             return response()->json(['status' => 'success', 'data' => $applicant->load(['jobOpening:id,title', 'addedByUser:id,name'])]);
@@ -151,13 +146,11 @@ class ApplicantController extends Controller
         if (!$user->company_id || $applicant->company_id !== $user->company_id) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
         }
-        // Add Auth checks (can user update?)
 
         $validator = Validator::make($request->all(), [
-             // Allow updating only specific fields, e.g., status and notes
              'status' => ['sometimes','required', Rule::in(['new', 'screening', 'interviewing', 'offer_extended', 'offer_accepted', 'hired', 'rejected', 'withdrawn'])],
              'notes' => 'nullable|string',
-             // Add other fields if needed, carefully considering validation rules (e.g., email uniqueness check needs ->ignore($applicant->id))
+             'rating' => 'nullable|numeric|min:0|max:5', // Added validation for rating
         ]);
 
         if ($validator->fails()) {
@@ -165,12 +158,49 @@ class ApplicantController extends Controller
         }
 
         try {
+            // $validator->validated() strips out any extra frontend data to prevent mass assignment
             $applicant->update($validator->validated());
-            // TODO: Add logic here if changing status to 'hired' should trigger something (e.g., create employee record)
+
             return response()->json(['status' => 'success', 'data' => $applicant->load('jobOpening:id,title')]);
         } catch (\Exception $e) {
              Log::error('Error updating applicant: '.$e->getMessage(), ['id' => $applicant->id]);
              return response()->json(['status' => 'error', 'message' => 'Could not update applicant.'], 500);
+        }
+    }
+
+    /**
+     * Custom Action: Transition an applicant to Hired status (and potentially create an employee)
+     */
+    public function hire(Request $request, Applicant $applicant)
+    {
+        $user = $request->user();
+        if (!$user->company_id || $applicant->company_id !== $user->company_id) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // 1. Update the applicant status
+            $applicant->update(['status' => 'hired']);
+
+            // 2. TODO: Automatically create an Employee record
+            /*
+            Employee::create([
+                'company_id' => $user->company_id,
+                'first_name' => $applicant->first_name,
+                'last_name' => $applicant->last_name,
+                'email' => $applicant->email,
+                'phone' => $applicant->phone,
+                // Map other necessary fields or trigger an onboarding workflow
+            ]);
+            */
+
+            DB::commit();
+            return response()->json(['status' => 'success', 'data' => $applicant, 'message' => 'Applicant hired successfully.']);
+        } catch (\Exception $e) {
+             DB::rollBack();
+             Log::error('Error hiring applicant: '.$e->getMessage(), ['id' => $applicant->id]);
+             return response()->json(['status' => 'error', 'message' => 'Could not process hiring action.'], 500);
         }
     }
 
@@ -183,14 +213,12 @@ class ApplicantController extends Controller
         if (!$user->company_id || $applicant->company_id !== $user->company_id) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
         }
-        // Add Auth check (can user delete?)
 
          try {
-             // Optionally delete the resume file from storage first
              if ($applicant->resume_path && Storage::disk('private')->exists($applicant->resume_path)) {
                  Storage::disk('private')->delete($applicant->resume_path);
              }
-            $applicant->delete(); // Soft delete
+            $applicant->delete();
             return response()->json(['status' => 'success', 'message' => 'Applicant archived successfully.']);
         } catch (\Exception $e) {
              Log::error('Error archiving applicant: '.$e->getMessage(), ['id' => $applicant->id]);
@@ -207,13 +235,11 @@ class ApplicantController extends Controller
          if (!$user->company_id || $applicant->company_id !== $user->company_id) {
             return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
         }
-         // Add auth checks
 
         if (!$applicant->resume_path) {
             return response()->json(['status' => 'error', 'message' => 'No resume file found for this applicant.'], 404);
         }
 
-        // Use the 'private' disk if that's where you stored it
         $disk = Storage::disk('private');
 
         if (!$disk->exists($applicant->resume_path)) {
@@ -221,7 +247,6 @@ class ApplicantController extends Controller
              return response()->json(['status' => 'error', 'message' => 'Resume file not found.'], 404);
         }
 
-        // Return a download response
         $filename = $applicant->resume_filename ?? 'resume_'. $applicant->id . '.' . pathinfo($applicant->resume_path, PATHINFO_EXTENSION);
         return $disk->download($applicant->resume_path, $filename);
     }

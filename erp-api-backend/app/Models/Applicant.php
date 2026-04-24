@@ -19,6 +19,7 @@ class Applicant extends Model
         'email',
         'phone',
         'source',
+        'rating',
         'status',
         'notes',
         'resume_path',
