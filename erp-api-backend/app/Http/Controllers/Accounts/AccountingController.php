@@ -408,4 +408,19 @@ class AccountingController extends Controller
 
         return response()->json($archivedReport);
     }
+
+        public function getDashboardSummary(Request $request) {
+        $start = $request->start_date ? Carbon::parse($request->start_date) : now()->startOfMonth();
+        $end = $request->end_date ? Carbon::parse($request->end_date) : now();
+        return response()->json($this->reportService->getDashboardSummary($start, $end));
+            }
+
+        public function getFinancialTrends(Request $request) {
+            return response()->json($this->reportService->getFinancialTrends($request->get('months', 6)));
+        }
+
+        public function getAlerts() {
+            return response()->json($this->reportService->getAlerts());
+        }
+
 }

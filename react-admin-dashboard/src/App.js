@@ -223,6 +223,7 @@ function App() {
                 {/* Accounting */}
                 <Route path="/accounts" element={<AccountsDashboard />} />
                 <Route path="/accounts/reports" element={<AccountingReports />} />
+                <Route path="/accounts/reports/hub" element={<ReportsHub />} />
                 <Route path="/accounts/reports/profit-loss" element={<ProfitAndLoss />} />
                 <Route path="accounts/reports/balance-sheet" element={<BalanceSheet />} />
                 <Route path="accounts/reports/trial-balance" element={<TrialBalance />} />

@@ -12,33 +12,19 @@ use App\Models\PurchaseOrder;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 class AccountingReportService
 {
-    /**
-     * The company context for the report.
-     */
     protected Company $company;
 
-    /**
-     * Set the company context for the report service.
-     *
-     * @param Company $company
-     * @return self
-     */
     public function setCompany(Company $company): self
     {
         $this->company = $company;
         return $this;
     }
 
-    /**
-     * Get the company ID, throwing an exception if not set.
-     *
-     * @return int
-     * @throws RuntimeException
-     */
     protected function getCompanyId(): int
     {
         if (!isset($this->company)) {
@@ -47,272 +33,398 @@ class AccountingReportService
         return $this->company->id;
     }
 
+    /**
+     * Internal caching helper to standardize TTL and keys.
+     */
+    private function rememberCache(string $key, callable $callback, int $ttl = 300)
+    {
+        return Cache::remember($key, $ttl, $callback);
+    }
+
     // =================================================================
-    // 1. CORE FINANCIAL REPORTS (TB, P&L, BS, CF)
+    // 1. UNIFIED BALANCE ENGINE (CORE OPTIMIZATION)
     // =================================================================
 
     /**
-     * Generate a Trial Balance report.
-     *
-     * @param Carbon|null $asOfDate
-     * @return array
+     * Single optimized engine for aggregating balances, preventing N+1
+     * and reducing DB load by combining type/subtype filters.
+     * Returns a scalar float total.
      */
-    public function generateTrialBalance(?Carbon $asOfDate = null): array
+    private function getSummedBalances(array $filters, ?Carbon $startDate = null, ?Carbon $endDate = null): float
     {
-        $asOfDate = ($asOfDate ?? now())->endOfDay();
         $companyId = $this->getCompanyId();
 
-        // 1. Get all relevant accounts first
-        $accounts = ChartOfAccount::where('company_id', $companyId)
-            ->orderBy('account_code')
-            ->get(['id', 'account_code', 'account_name', 'account_type']);
+        $query = DB::table('journal_entry_lines as jel')
+            ->join('journal_entries as je', 'jel.journal_entry_id', '=', 'je.id')
+            ->join('chart_of_accounts as coa', 'jel.chart_of_account_id', '=', 'coa.id')
+            ->where('coa.company_id', $companyId);
 
-        if ($accounts->isEmpty()) {
+        if (isset($filters['types'])) {
+            $query->whereIn('coa.account_type', $filters['types']);
+        }
+
+        if (isset($filters['subtypes'])) {
+            $query->whereIn('coa.account_subtype', $filters['subtypes']);
+        }
+
+        if ($startDate) {
+            $query->whereBetween('je.transaction_date', [
+                $startDate->copy()->startOfDay(),
+                ($endDate ?? now())->copy()->endOfDay()
+            ]);
+        } else {
+            $query->where('je.transaction_date', '<=', ($endDate ?? now())->copy()->endOfDay());
+        }
+
+        $results = $query
+            ->select(
+                'coa.account_type',
+                DB::raw('SUM(jel.debit) as total_debit'),
+                DB::raw('SUM(jel.credit) as total_credit')
+            )
+            ->groupBy('coa.account_type')
+            ->get();
+
+        $total = 0;
+
+        foreach ($results as $row) {
+            $raw = $row->total_debit - $row->total_credit;
+            $total += $this->adjustBalanceSign($raw, $row->account_type);
+        }
+
+        return round($total, 2);
+    }
+
+    // =================================================================
+    // 2. ENTERPRISE DASHBOARD & ANALYTICS APIs
+    // =================================================================
+
+    public function getDashboardSummary(Carbon $startDate, Carbon $endDate): array
+    {
+        $companyId = $this->getCompanyId();
+        $cacheKey = "company_{$companyId}_dashboard_summary_{$startDate->format('Ymd')}_{$endDate->format('Ymd')}";
+
+        return $this->rememberCache($cacheKey, function () use ($startDate, $endDate) {
+            $revenue = $this->getSummedBalances(['types' => ['Revenue', 'Income', 'Sales']], $startDate, $endDate);
+            $expenses = $this->getSummedBalances(['types' => ['Expense', 'Cost of Goods Sold']], $startDate, $endDate);
+
+            return [
+                'revenue' => $revenue,
+                'expenses' => $expenses,
+                'net_income' => round($revenue - $expenses, 2),
+                'cash_balance' => $this->getSummedBalances(['subtypes' => ['asset_cash']], null, $endDate),
+                'receivables' => $this->getSummedBalances(['subtypes' => ['asset_receivable']], null, $endDate),
+                'payables' => $this->getSummedBalances(['subtypes' => ['liability_payable']], null, $endDate),
+            ];
+        });
+    }
+
+    public function getFinancialTrends(int $months = 12): Collection
+    {
+        $companyId = $this->getCompanyId();
+        $cacheKey = "company_{$companyId}_financial_trends_{$months}_months";
+
+        return $this->rememberCache($cacheKey, function () use ($months) {
+            return collect(range(0, $months - 1))->map(function ($i) {
+                $date = now()->subMonths($i);
+                $start = $date->copy()->startOfMonth();
+                $end = $date->copy()->endOfMonth();
+
+                return [
+                    'month' => $date->format('M Y'),
+                    'sort_key' => $date->format('Y-m'),
+                    'revenue' => $this->getSummedBalances(['types' => ['Revenue', 'Income', 'Sales']], $start, $end),
+                    'expenses' => $this->getSummedBalances(['types' => ['Expense', 'Cost of Goods Sold']], $start, $end)
+                ];
+            })->sortBy('sort_key')->values();
+        }, 3600); // Cache trends for 1 hour
+    }
+
+    public function getKpiTargets(Carbon $startDate, Carbon $endDate): array
+    {
+        $report = $this->generateBudgetVsActuals($startDate, $endDate);
+
+        return [
+            'revenue_target' => $report['totals']['revenue_budget'],
+            'revenue_actual' => $report['totals']['revenue_actual'],
+            'expense_target' => $report['totals']['expense_budget'],
+            'expense_actual' => $report['totals']['expense_actual'],
+        ];
+    }
+
+    public function getAlerts(): array
+    {
+        $today = now();
+        $yesterday = now()->subDay();
+
+        $todayRevenue = $this->getSummedBalances(['types' => ['Revenue', 'Income', 'Sales']], $today->copy()->startOfDay(), $today);
+        $yesterdayRevenue = $this->getSummedBalances(['types' => ['Revenue', 'Income', 'Sales']], $yesterday->copy()->startOfDay(), $yesterday->copy()->endOfDay());
+
+        $alerts = [];
+
+        if ($yesterdayRevenue > 0 && ($todayRevenue - $yesterdayRevenue) / $yesterdayRevenue > 0.5) {
+            $alerts[] = [
+                'type' => 'success',
+                'title' => 'Revenue Spike Detected',
+                'message' => 'Today\'s revenue is tracking 50% higher than yesterday.'
+            ];
+        }
+
+        if ($yesterdayRevenue > 0 && $todayRevenue < ($yesterdayRevenue * 0.5) && $today->hour > 12) {
+            $alerts[] = [
+                'type' => 'warning',
+                'title' => 'Low Revenue Alert',
+                'message' => 'Revenue is significantly lower than yesterday at this time.'
+            ];
+        }
+
+        $cashBalance = $this->getSummedBalances(['subtypes' => ['asset_cash']], null, $today);
+        $payables = $this->getSummedBalances(['subtypes' => ['liability_payable']], null, $today);
+
+        if ($payables > $cashBalance && $cashBalance > 0) {
+            $alerts[] = [
+                'type' => 'error',
+                'title' => 'Liquidity Warning',
+                'message' => 'Current payables exceed available cash on hand.'
+            ];
+        }
+
+        return $alerts;
+    }
+
+    public function getRevenueBreakdown(Carbon $startDate, Carbon $endDate): Collection
+    {
+        $companyId = $this->getCompanyId();
+
+        return DB::table('sales_orders')
+            ->join('customers', 'sales_orders.customer_id', '=', 'customers.id')
+            ->where('sales_orders.company_id', $companyId)
+            ->whereBetween('sales_orders.order_date', [$startDate->copy()->startOfDay(), $endDate->copy()->endOfDay()])
+            ->select('customers.name as customer_name', DB::raw('SUM(sales_orders.total_amount) as total_revenue'))
+            ->groupBy('customers.id', 'customers.name')
+            ->orderByDesc('total_revenue')
+            ->limit(10)
+            ->get();
+    }
+
+    // =================================================================
+    // 3. CORE FINANCIAL REPORTS (TB, P&L, BS, CF)
+    // =================================================================
+
+    public function generateTrialBalance(?Carbon $asOfDate = null): array
+    {
+        $asOfDate = ($asOfDate ?? now())->copy()->endOfDay();
+        $companyId = $this->getCompanyId();
+        $cacheKey = "company_{$companyId}_tb_{$asOfDate->format('Ymd')}";
+
+        return $this->rememberCache($cacheKey, function () use ($asOfDate, $companyId) {
+            $accounts = ChartOfAccount::where('company_id', $companyId)
+                ->orderBy('account_code')
+                ->get(['id', 'account_code', 'account_name', 'account_type']);
+
+            if ($accounts->isEmpty()) {
+                return [
+                    'company_name' => $this->company->name,
+                    'as_of_date' => $asOfDate->toFormattedDateString(),
+                    'debits' => [], 'credits' => [],
+                    'total_debits' => 0, 'total_credits' => 0,
+                    'status' => 'Balanced', 'difference' => 0
+                ];
+            }
+
+            $accountIds = $accounts->pluck('id')->all();
+
+            $balances = DB::table('journal_entry_lines')
+                ->join('journal_entries', 'journal_entry_lines.journal_entry_id', '=', 'journal_entries.id')
+                ->whereIn('journal_entry_lines.chart_of_account_id', $accountIds)
+                ->where('journal_entries.transaction_date', '<=', $asOfDate)
+                ->select(
+                    'journal_entry_lines.chart_of_account_id',
+                    DB::raw('SUM(journal_entry_lines.debit) as total_debit'),
+                    DB::raw('SUM(journal_entry_lines.credit) as total_credit')
+                )
+                ->groupBy('journal_entry_lines.chart_of_account_id')
+                ->get()
+                ->keyBy('chart_of_account_id');
+
+            $debits = [];
+            $credits = [];
+            $totalDebits = 0;
+            $totalCredits = 0;
+
+            foreach ($accounts as $account) {
+                $accountBalanceData = $balances->get($account->id);
+                $account_total_debit = $accountBalanceData->total_debit ?? 0;
+                $account_total_credit = $accountBalanceData->total_credit ?? 0;
+
+                $netBalance = $account_total_debit - $account_total_credit;
+
+                if (abs($netBalance) < 0.01) continue;
+
+                $accountData = [
+                    'account_code' => $account->account_code,
+                    'account_name' => $account->account_name,
+                ];
+
+                if ($netBalance > 0) {
+                    $accountData['balance'] = round($netBalance, 2);
+                    $debits[] = $accountData;
+                    $totalDebits += $netBalance;
+                } else {
+                    $accountData['balance'] = round(abs($netBalance), 2);
+                    $credits[] = $accountData;
+                    $totalCredits += abs($netBalance);
+                }
+            }
+
+            $isBalanced = abs($totalDebits - $totalCredits) < 0.01;
+
             return [
                 'company_name' => $this->company->name,
                 'as_of_date' => $asOfDate->toFormattedDateString(),
-                'debits' => [], 'credits' => [],
-                'total_debits' => 0, 'total_credits' => 0,
-                'status' => 'Balanced', 'difference' => 0
+                'debits' => $debits,
+                'credits' => $credits,
+                'total_debits' => round($totalDebits, 2),
+                'total_credits' => round($totalCredits, 2),
+                'status' => $isBalanced ? 'Balanced' : 'Unbalanced',
+                'difference' => $isBalanced ? 0 : round($totalDebits - $totalCredits, 2),
             ];
-        }
-
-        $accountIds = $accounts->pluck('id')->all();
-
-        // 2. Query summed debits/credits directly from journal lines
-        $balances = DB::table('journal_entry_lines')
-            ->join('journal_entries', 'journal_entry_lines.journal_entry_id', '=', 'journal_entries.id')
-            ->whereIn('journal_entry_lines.chart_of_account_id', $accountIds)
-            ->where('journal_entries.transaction_date', '<=', $asOfDate)
-            ->select(
-                'journal_entry_lines.chart_of_account_id',
-                DB::raw('SUM(journal_entry_lines.debit) as total_debit'),
-                DB::raw('SUM(journal_entry_lines.credit) as total_credit')
-            )
-            ->groupBy('journal_entry_lines.chart_of_account_id')
-            ->get()
-            ->keyBy('chart_of_account_id');
-
-        // 3. Map balances and format
-        $debits = [];
-        $credits = [];
-        $totalDebits = 0;
-        $totalCredits = 0;
-
-        foreach ($accounts as $account) {
-            $accountBalanceData = $balances->get($account->id);
-            $account_total_debit = $accountBalanceData->total_debit ?? 0;
-            $account_total_credit = $accountBalanceData->total_credit ?? 0;
-
-            // Calculate raw balance (Assets/Expenses are Debit-natural, others Credit-natural)
-            // However, for Trial Balance presentation, we split into Debit Column and Credit Column based on net result.
-            $netBalance = $account_total_debit - $account_total_credit;
-
-            if (abs($netBalance) < 0.01) continue; // Skip zero balance accounts
-
-            $accountData = [
-                'account_code' => $account->account_code,
-                'account_name' => $account->account_name,
-            ];
-
-            if ($netBalance > 0) {
-                // Debit Balance
-                $accountData['balance'] = round($netBalance, 2);
-                $debits[] = $accountData;
-                $totalDebits += $netBalance;
-            } else {
-                // Credit Balance (absolute value for display)
-                $accountData['balance'] = round(abs($netBalance), 2);
-                $credits[] = $accountData;
-                $totalCredits += abs($netBalance);
-            }
-        }
-
-        // Use a small epsilon for floating-point comparison safety
-        $isBalanced = abs($totalDebits - $totalCredits) < 0.01;
-
-        return [
-            'company_name' => $this->company->name,
-            'as_of_date' => $asOfDate->toFormattedDateString(),
-            'debits' => $debits,
-            'credits' => $credits,
-            'total_debits' => round($totalDebits, 2),
-            'total_credits' => round($totalCredits, 2),
-            'status' => $isBalanced ? 'Balanced' : 'Unbalanced',
-            'difference' => $isBalanced ? 0 : round($totalDebits - $totalCredits, 2),
-        ];
+        });
     }
 
-    /**
-     * Generate a Profit and Loss (Income Statement) report.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
     public function generateProfitAndLoss(Carbon $startDate, Carbon $endDate): array
     {
-        $startDate = $startDate->startOfDay();
-        $endDate = $endDate->endOfDay();
+        $companyId = $this->getCompanyId();
+        $cacheKey = "company_{$companyId}_pl_{$startDate->format('Ymd')}_{$endDate->format('Ymd')}";
 
-        // 1. Fetch Revenue Accounts Balances
-        $revenues = $this->getAccountBalances(['Revenue'], $endDate, $startDate);
+        return $this->rememberCache($cacheKey, function () use ($startDate, $endDate) {
+            $revenues = $this->getAccountBalances(['Revenue', 'Income', 'Sales'], $endDate, $startDate);
+            $expenses = $this->getAccountBalances(['Expense', 'Cost of Goods Sold', 'Operating Expense'], $endDate, $startDate);
 
-        // 2. Fetch Expense Accounts Balances
-        $expenses = $this->getAccountBalances(['Expense'], $endDate, $startDate);
+            $totalRevenue = $revenues->sum('balance');
+            $totalExpenses = $expenses->sum('balance');
+            $netIncome = $totalRevenue - $totalExpenses;
 
-        // 3. Calculate Totals
-        $totalRevenue = $revenues->sum('balance');
-        $totalExpenses = $expenses->sum('balance');
-        $netIncome = $totalRevenue - $totalExpenses;
-
-        return [
-            'company_name' => $this->company->name,
-            'period' => $startDate->toFormattedDateString() . ' - ' . $endDate->toFormattedDateString(),
-            'revenues' => $revenues,
-            'total_revenue' => round($totalRevenue, 2),
-            'expenses' => $expenses,
-            'total_expenses' => round($totalExpenses, 2),
-            'net_income' => round($netIncome, 2),
-        ];
+            return [
+                'company_name' => $this->company->name,
+                'period' => $startDate->copy()->toFormattedDateString() . ' - ' . $endDate->copy()->toFormattedDateString(),
+                'revenues' => $revenues,
+                'total_revenue' => round($totalRevenue, 2),
+                'expenses' => $expenses,
+                'total_expenses' => round($totalExpenses, 2),
+                'net_income' => round($netIncome, 2),
+            ];
+        });
     }
 
-    /**
-     * Generate a Balance Sheet report.
-     *
-     * @param Carbon|null $asOfDate
-     * @return array
-     */
     public function generateBalanceSheet(?Carbon $asOfDate = null): array
     {
-        $asOfDate = ($asOfDate ?? now())->endOfDay();
+        $asOfDate = ($asOfDate ?? now())->copy()->endOfDay();
+        $companyId = $this->getCompanyId();
+        $cacheKey = "company_{$companyId}_bs_{$asOfDate->format('Ymd')}";
 
-        // Get Cumulative Balances
-        $assets = $this->getAccountBalances(['Asset'], $asOfDate);
-        $liabilities = $this->getAccountBalances(['Liability'], $asOfDate);
-        $equity = $this->getAccountBalances(['Equity'], $asOfDate);
+        return $this->rememberCache($cacheKey, function () use ($asOfDate) {
+            $assets = $this->getAccountBalances(['Asset'], $asOfDate);
+            $liabilities = $this->getAccountBalances(['Liability'], $asOfDate);
+            $equity = $this->getAccountBalances(['Equity'], $asOfDate);
 
-        // Calculate Net Income YTD (Assumes fiscal year starts Jan 1st)
-        $startOfYear = $asOfDate->copy()->startOfYear();
-        $netIncomeYtd = $this->calculateNetIncome($startOfYear, $asOfDate);
+            $startOfYear = $asOfDate->copy()->startOfYear();
+            $netIncomeYtd = $this->calculateNetIncome($startOfYear, $asOfDate);
 
-        // Add Net Income to Equity section as "Current Year Earnings"
-        $equity->push([
-            'account_code' => 'NI-YTD',
-            'account_name' => 'Net Income (YTD)',
-            'account_subtype' => 'equity_retained_earnings',
-            'balance' => round($netIncomeYtd, 2)
-        ]);
+            $equity->push([
+                'account_code' => 'NI-YTD',
+                'account_name' => 'Net Income (YTD)',
+                'account_subtype' => 'equity_retained_earnings',
+                'balance' => round($netIncomeYtd, 2)
+            ]);
 
-        $totalAssets = round($assets->sum('balance'), 2);
-        $totalLiabilities = round($liabilities->sum('balance'), 2);
-        $totalEquity = round($equity->sum('balance'), 2);
-        $totalLiabilitiesAndEquity = round($totalLiabilities + $totalEquity, 2);
+            $totalAssets = round($assets->sum('balance'), 2);
+            $totalLiabilities = round($liabilities->sum('balance'), 2);
+            $totalEquity = round($equity->sum('balance'), 2);
+            $totalLiabilitiesAndEquity = round($totalLiabilities + $totalEquity, 2);
 
-        // Determine if balanced
-        $isBalanced = abs($totalAssets - $totalLiabilitiesAndEquity) < 0.01;
+            $isBalanced = abs($totalAssets - $totalLiabilitiesAndEquity) < 0.01;
 
-        return [
-            'company_name' => $this->company->name,
-            'as_of_date' => $asOfDate->toFormattedDateString(),
-            'assets' => ['accounts' => $assets->groupBy('account_subtype'), 'total' => $totalAssets],
-            'liabilities' => ['accounts' => $liabilities->groupBy('account_subtype'), 'total' => $totalLiabilities],
-            'equity' => ['accounts' => $equity->groupBy('account_subtype'), 'total' => $totalEquity],
-            'total_liabilities_and_equity' => $totalLiabilitiesAndEquity,
-            'check_balance' => $isBalanced ? 'Balanced' : 'Unbalanced',
-        ];
+            return [
+                'company_name' => $this->company->name,
+                'as_of_date' => $asOfDate->toFormattedDateString(),
+                'assets' => ['accounts' => $assets->groupBy('account_subtype'), 'total' => $totalAssets],
+                'liabilities' => ['accounts' => $liabilities->groupBy('account_subtype'), 'total' => $totalLiabilities],
+                'equity' => ['accounts' => $equity->groupBy('account_subtype'), 'total' => $totalEquity],
+                'total_liabilities_and_equity' => $totalLiabilitiesAndEquity,
+                'check_balance' => $isBalanced ? 'Balanced' : 'Unbalanced',
+            ];
+        });
     }
 
-    /**
-     * Generate the Statement of Cash Flows (Indirect Method).
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
     public function generateCashFlowStatement(Carbon $startDate, Carbon $endDate): array
     {
-        $startDate = $startDate->startOfDay();
-        $endDate = $endDate->endOfDay();
+        $companyId = $this->getCompanyId();
+        $cacheKey = "company_{$companyId}_cf_{$startDate->format('Ymd')}_{$endDate->format('Ymd')}";
 
-        // 1. Start with Net Income
-        $netIncome = $this->calculateNetIncome($startDate, $endDate);
+        return $this->rememberCache($cacheKey, function () use ($startDate, $endDate) {
+            $netIncome = $this->calculateNetIncome($startDate, $endDate);
 
-        // 2. Get snapshots of Balance Sheet accounts at start and end
-        $bsAccountsStart = $this->getAllAccountBalancesCumulative($startDate->copy()->subDay());
-        $bsAccountsEnd = $this->getAllAccountBalancesCumulative($endDate);
+            // Fetch cumulative balances just before the period starts and at the end of the period
+            $bsAccountsStart = $this->getAllAccountBalancesCumulative($startDate->copy()->subDay());
+            $bsAccountsEnd = $this->getAllAccountBalancesCumulative($endDate->copy());
 
-        // 3. Operating Activities (Adjust Net Income for non-cash items and working capital changes)
-        $changes = $this->calculateOperatingChanges($bsAccountsStart, $bsAccountsEnd);
-        $cashFlowFromOperations = $netIncome + $changes['operating_net_adjustment'];
+            $changes = $this->calculateOperatingChanges($bsAccountsStart, $bsAccountsEnd);
+            $cashFlowFromOperations = $netIncome + $changes['operating_net_adjustment'];
 
-        // 4. Investing Activities (Fixed Assets, Investments)
-        $investingActivities = $this->calculateInvestingChanges($bsAccountsStart, $bsAccountsEnd);
-        $cashFlowFromInvesting = $investingActivities['investing_net'];
+            $investingActivities = $this->calculateInvestingChanges($bsAccountsStart, $bsAccountsEnd);
+            $cashFlowFromInvesting = $investingActivities['investing_net'];
 
-        // 5. Financing Activities (Debt, Equity, Dividends)
-        $financingActivities = $this->calculateFinancingChanges($bsAccountsStart, $bsAccountsEnd);
-        $cashFlowFromFinancing = $financingActivities['financing_net'];
+            $financingActivities = $this->calculateFinancingChanges($bsAccountsStart, $bsAccountsEnd);
+            $cashFlowFromFinancing = $financingActivities['financing_net'];
 
-        // 6. Summary
-        $netChangeInCash = $cashFlowFromOperations + $cashFlowFromInvesting + $cashFlowFromFinancing;
-        $endingCashBalance = $this->getCashBalance($bsAccountsEnd);
-        $beginningCashBalance = $endingCashBalance - $netChangeInCash;
+            $netChangeInCash = $cashFlowFromOperations + $cashFlowFromInvesting + $cashFlowFromFinancing;
+            $endingCashBalance = $this->getCashBalance($bsAccountsEnd);
+            $beginningCashBalance = $endingCashBalance - $netChangeInCash;
 
-        return [
-            'company_name' => $this->company->name,
-            'report_period' => $startDate->toFormattedDateString() . ' to ' . $endDate->toFormattedDateString(),
-            'net_income' => round($netIncome, 2),
-            'operating' => [
-                'details' => $changes['operating_details'],
-                'total' => round($cashFlowFromOperations, 2),
-            ],
-            'investing' => [
-                'details' => $investingActivities['details'],
-                'total' => round($cashFlowFromInvesting, 2),
-            ],
-            'financing' => [
-                'details' => $financingActivities['details'],
-                'total' => round($cashFlowFromFinancing, 2),
-            ],
-            'net_change_in_cash' => round($netChangeInCash, 2),
-            'beginning_cash_balance' => round($beginningCashBalance, 2),
-            'ending_cash_balance' => round($endingCashBalance, 2),
-        ];
+            return [
+                'company_name' => $this->company->name,
+                'report_period' => $startDate->copy()->toFormattedDateString() . ' to ' . $endDate->copy()->toFormattedDateString(),
+                'net_income' => round($netIncome, 2),
+                'operating' => [
+                    'details' => $changes['operating_details'],
+                    'total' => round($cashFlowFromOperations, 2),
+                ],
+                'investing' => [
+                    'details' => $investingActivities['details'],
+                    'total' => round($cashFlowFromInvesting, 2),
+                ],
+                'financing' => [
+                    'details' => $financingActivities['details'],
+                    'total' => round($cashFlowFromFinancing, 2),
+                ],
+                'net_change_in_cash' => round($netChangeInCash, 2),
+                'beginning_cash_balance' => round($beginningCashBalance, 2),
+                'ending_cash_balance' => round($endingCashBalance, 2),
+            ];
+        });
     }
 
     // =================================================================
-    // 2. ANALYTICAL REPORTS (Budget, Ratios)
+    // 4. ANALYTICAL REPORTS & RATIOS
     // =================================================================
 
-    /**
-     * Generate a Budget vs. Actuals report for a specific period.
-     *
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
     public function generateBudgetVsActuals(Carbon $startDate, Carbon $endDate): array
     {
-        $startDate = $startDate->startOfDay();
-        $endDate = $endDate->endOfDay();
         $companyId = $this->getCompanyId();
 
-        // 1. Get Actuals
-        $revenueActuals = $this->getAccountBalances(['Revenue'], $endDate, $startDate);
-        $expenseActuals = $this->getAccountBalances(['Expense'], $endDate, $startDate);
+        $revenueActuals = $this->getAccountBalances(['Revenue', 'Income', 'Sales'], $endDate, $startDate);
+        $expenseActuals = $this->getAccountBalances(['Expense', 'Cost of Goods Sold', 'Operating Expense'], $endDate, $startDate);
         $allActuals = $revenueActuals->merge($expenseActuals);
 
-        // 2. Get Budgets
         $budgets = Budget::where('company_id', $companyId)
-            ->whereBetween('period', [$startDate->format('Y-m-01'), $endDate->format('Y-m-t')])
+            ->whereBetween('period', [$startDate->copy()->format('Y-m-01'), $endDate->copy()->format('Y-m-t')])
             ->get()
             ->groupBy('chart_of_account_id')
             ->map(function ($group) {
                 return $group->sum('amount');
             });
 
-        // 3. Get Accounts Map
         $plSubtypes = ['revenue_sales', 'revenue_other', 'expense_cogs', 'expense_operating', 'expense_other'];
         $coaMap = ChartOfAccount::where('company_id', $companyId)
             ->where(function($q) use ($plSubtypes) {
@@ -325,7 +437,6 @@ class AccountingReportService
         $reportLines = [];
 
         foreach ($coaMap as $accountId => $account) {
-            // Find Actual
             $actualData = $allActuals->first(function ($item) use ($account) {
                 return isset($item['account_code']) && $item['account_code'] === $account->account_code;
             });
@@ -336,12 +447,7 @@ class AccountingReportService
             if ($actualAmount == 0 && $budgetAmount == 0) continue;
 
             $variance = $actualAmount - $budgetAmount;
-            $percent = 0;
-            if ($budgetAmount != 0) {
-                $percent = ($variance / $budgetAmount) * 100;
-            } elseif ($actualAmount != 0) {
-                $percent = 100;
-            }
+            $percent = $budgetAmount != 0 ? ($variance / $budgetAmount) * 100 : ($actualAmount != 0 ? 100 : 0);
 
             $reportLines[] = [
                 'account_id' => $accountId,
@@ -361,7 +467,7 @@ class AccountingReportService
 
         return [
             'company_name' => $this->company->name,
-            'report_period' => $startDate->toFormattedDateString() . ' to ' . $endDate->toFormattedDateString(),
+            'report_period' => $startDate->copy()->toFormattedDateString() . ' to ' . $endDate->copy()->toFormattedDateString(),
             'revenue' => $grouped->get('Revenue', collect())->values(),
             'expenses' => $grouped->get('Expense', collect())->values(),
             'totals' => [
@@ -373,28 +479,17 @@ class AccountingReportService
         ];
     }
 
-    /**
-     * Get key financial ratios.
-     *
-     * @return array
-     */
     public function getKeyRatios(): array
     {
-        $endDate = Carbon::today()->endOfDay();
-        $companyId = $this->getCompanyId();
+        $endDate = now()->endOfDay();
 
-        // Define subtypes for Ratios
-        $currentAssetSubtypes = ['asset_cash', 'asset_receivable', 'asset_inventory', 'asset_prepaid', 'asset_current_other'];
-        $inventorySubtypes = ['asset_inventory'];
-        $currentLiabilitySubtypes = ['liability_payable', 'liability_unearned_revenue', 'liability_tax_payable', 'liability_current_other', 'liability_credit_card'];
-
-        $totalCurrentAssets = $this->getSummedBalanceForSubtypes($currentAssetSubtypes, null, $endDate);
-        $totalInventory = $this->getSummedBalanceForSubtypes($inventorySubtypes, null, $endDate);
-        $totalCurrentLiabilities = $this->getSummedBalanceForSubtypes($currentLiabilitySubtypes, null, $endDate);
+        $totalCurrentAssets = $this->getSummedBalances(['subtypes' => ['asset_cash', 'asset_receivable', 'asset_inventory', 'asset_prepaid', 'asset_current_other']], null, $endDate);
+        $totalInventory = $this->getSummedBalances(['subtypes' => ['asset_inventory']], null, $endDate);
+        $totalCurrentLiabilities = $this->getSummedBalances(['subtypes' => ['liability_payable', 'liability_unearned_revenue', 'liability_tax_payable', 'liability_current_other', 'liability_credit_card']], null, $endDate);
 
         $startOfYear = $endDate->copy()->startOfYear();
-        $totalRevenueYtd = $this->getSummedBalanceForType(['Revenue'], $startOfYear, $endDate);
-        $totalExpensesYtd = $this->getSummedBalanceForType(['Expense'], $startOfYear, $endDate);
+        $totalRevenueYtd = $this->getSummedBalances(['types' => ['Revenue', 'Income', 'Sales']], $startOfYear, $endDate);
+        $totalExpensesYtd = $this->getSummedBalances(['types' => ['Expense', 'Cost of Goods Sold']], $startOfYear, $endDate);
         $netIncomeYtd = $totalRevenueYtd - $totalExpensesYtd;
 
         $currentRatio = ($totalCurrentLiabilities != 0) ? ($totalCurrentAssets / $totalCurrentLiabilities) : 0;
@@ -413,36 +508,25 @@ class AccountingReportService
     }
 
     // =================================================================
-    // 3. OPERATIONAL & LISTING REPORTS (GL, Aging, Payroll)
+    // 5. OPERATIONAL & LISTING REPORTS (GL, Aging, Payroll)
     // =================================================================
 
-    /**
-     * Generate a General Ledger report.
-     *
-     * @param int $accountId
-     * @param Carbon $startDate
-     * @param Carbon $endDate
-     * @return array
-     */
     public function generateGeneralLedger(int $accountId, Carbon $startDate, Carbon $endDate): array
     {
         $account = ChartOfAccount::where('company_id', $this->getCompanyId())->findOrFail($accountId);
 
-        // Opening Balance
         $openingBalanceData = JournalEntryLine::where('chart_of_account_id', $accountId)
-            ->whereHas('journalEntry', fn($q) => $q->where('transaction_date', '<', $startDate->startOfDay()))
+            ->whereHas('journalEntry', fn($q) => $q->where('transaction_date', '<', $startDate->copy()->startOfDay()))
             ->selectRaw('SUM(debit) as total_debit, SUM(credit) as total_credit')
             ->first();
 
         $openingBalance = ($openingBalanceData->total_debit ?? 0) - ($openingBalanceData->total_credit ?? 0);
-        $isCreditAccount = in_array($account->account_type, ['Liability', 'Equity', 'Revenue']);
-        if ($isCreditAccount) {
-            $openingBalance = -$openingBalance;
-        }
+        $openingBalance = $this->adjustBalanceSign($openingBalance, $account->account_type);
 
-        // Transactions
+        $isCreditAccount = in_array($account->account_type, ['Liability', 'Equity', 'Revenue', 'Income', 'Sales']);
+
         $lines = JournalEntryLine::where('chart_of_account_id', $accountId)
-            ->whereHas('journalEntry', fn($q) => $q->whereBetween('transaction_date', [$startDate->startOfDay(), $endDate->endOfDay()]))
+            ->whereHas('journalEntry', fn($q) => $q->whereBetween('transaction_date', [$startDate->copy()->startOfDay(), $endDate->copy()->endOfDay()]))
             ->with('journalEntry')
             ->orderBy('journal_entry_id')
             ->get();
@@ -469,20 +553,13 @@ class AccountingReportService
             'company_name' => $this->company->name,
             'account_name' => $account->account_name,
             'account_code' => $account->account_code,
-            'period' => $startDate->toFormattedDateString() . ' - ' . $endDate->toFormattedDateString(),
+            'period' => $startDate->copy()->toFormattedDateString() . ' - ' . $endDate->copy()->toFormattedDateString(),
             'opening_balance' => round($openingBalance, 2),
             'transactions' => $transactions,
             'closing_balance' => round($runningBalance, 2),
         ];
     }
 
-    /**
-     * Generate Accounts Receivable Aging Report.
-     * Context-aware labels for industry type.
-     *
-     * @param array $customBuckets
-     * @return array
-     */
     public function generateAccountsReceivableAging(array $customBuckets = []): array
     {
         $buckets = empty($customBuckets) ? [
@@ -542,12 +619,6 @@ class AccountingReportService
         ];
     }
 
-    /**
-     * Generate Accounts Payable Aging Report.
-     *
-     * @param array $customBuckets
-     * @return array
-     */
     public function generateAccountsPayableAging(array $customBuckets = []): array
     {
         $buckets = empty($customBuckets) ? [
@@ -599,17 +670,10 @@ class AccountingReportService
         ];
     }
 
-    /**
-     * Generate Bank Payment List (Payroll).
-     *
-     * @param Carbon $endDate
-     * @param array $options
-     * @return array
-     */
     public function generateBankPaymentList(Carbon $endDate, array $options = []): array
     {
         $query = Payslip::where('company_id', $this->getCompanyId())
-            ->where('pay_period_end', $endDate->toDateString())
+            ->where('pay_period_end', $endDate->copy()->toDateString())
             ->with('user.employeeProfile');
 
         if (isset($options['department_id'])) {
@@ -621,7 +685,7 @@ class AccountingReportService
         if ($payslips->isEmpty()) {
             return [
                 'company_name' => $this->company->name,
-                'pay_period' => $endDate->format('F Y'),
+                'pay_period' => $endDate->copy()->format('F Y'),
                 'total_net_payable' => 0,
                 'payment_list' => [],
             ];
@@ -647,17 +711,10 @@ class AccountingReportService
         ];
     }
 
-    /**
-     * Generate Statutory Deductions Report.
-     * Context-aware labels for different company types.
-     *
-     * @param Carbon $endDate
-     * @return array
-     */
     public function generateStatutoryReport(Carbon $endDate): array
     {
         $payslips = Payslip::where('company_id', $this->getCompanyId())
-            ->where('pay_period_end', $endDate->toDateString())
+            ->where('pay_period_end', $endDate->copy()->toDateString())
             ->with('user.employeeProfile')
             ->get();
 
@@ -716,42 +773,46 @@ class AccountingReportService
             $totals['housing_levy'] += $housingLevy;
         }
 
-        $totals = array_map(fn($val) => round($val, 2), $totals);
-
         return [
             'company_name' => $this->company->name,
             'pay_period' => $endDate->format('F Y'),
             'labels' => $labels,
-            'totals' => $totals,
+            'totals' => array_map(fn($val) => round($val, 2), $totals),
             'details' => $reportLines,
         ];
     }
 
     // =================================================================
-    // PRIVATE HELPER METHODS
+    // 6. HELPER METHODS
     // =================================================================
 
-   /**
-    * Fetches balances for accounts filtered by type and date range.
-    */
-   private function getAccountBalances(array $types, $endDate, $startDate = null): Collection
+    public function calculateNetIncome($startDate, $endDate): float
+    {
+        $revenue = $this->getSummedBalances(['types' => ['Revenue', 'Income', 'Sales']], $startDate, $endDate);
+        $expenses = $this->getSummedBalances(['types' => ['Expense', 'Cost of Goods Sold']], $startDate, $endDate);
+        return round($revenue - $expenses, 2);
+    }
+
+    public function adjustBalanceSign(float $rawBalance, string $accountType): float
+    {
+        if (in_array($accountType, ['Liability', 'Equity', 'Revenue', 'Income', 'Other Income', 'Sales'])) {
+            return -$rawBalance;
+        }
+        return $rawBalance;
+    }
+
+    /**
+     * Line item balances for P&L and Balance Sheet (Requires individual accounts,
+     * cannot use the unified scalar engine).
+     */
+    public function getAccountBalances(array $types, $endDate, $startDate = null): Collection
     {
         $companyId = $this->getCompanyId();
         $endDate = $endDate->copy()->endOfDay();
         $startDate = $startDate ? $startDate->copy()->startOfDay() : null;
 
-        // Consolidate common P&L types
-        $consolidatedTypes = $types;
-        if (in_array('Revenue', $types)) {
-            $consolidatedTypes = array_merge($consolidatedTypes, ['Income', 'Other Income', 'Sales']);
-        }
-        if (in_array('Expense', $types)) {
-            $consolidatedTypes = array_merge($consolidatedTypes, ['Cost of Goods Sold', 'Other Expense', 'Operating Expense', 'Cost of Revenue']);
-        }
-        $consolidatedTypes = array_unique($consolidatedTypes);
-
         $query = ChartOfAccount::where('company_id', $companyId)
-            ->whereIn('account_type', $consolidatedTypes)
+            ->whereIn('account_type', $types)
             ->withSum([
                 'journalLines as total_debit' => function ($q) use ($startDate, $endDate) {
                     $q->join('journal_entries', 'journal_entry_lines.journal_entry_id', '=', 'journal_entries.id');
@@ -793,108 +854,7 @@ class AccountingReportService
     }
 
     /**
-     * Calculates Net Income (Revenue - Expenses).
-     */
-    private function calculateNetIncome($startDate, $endDate): float {
-        $revenue = $this->getSummedBalanceForType(['Revenue'], $startDate, $endDate);
-        $expenses = $this->getSummedBalanceForType(['Expense'], $startDate, $endDate);
-        return round($revenue - $expenses, 2);
-    }
-
-    /**
-     * Sums balance for a list of account SUBTYPES.
-     */
-    private function getSummedBalanceForSubtypes(array $subtypes, ?Carbon $startDate = null, ?Carbon $endDate = null): float {
-        $companyId = $this->getCompanyId();
-        $accounts = ChartOfAccount::where('company_id', $companyId)
-            ->whereIn('account_subtype', $subtypes)
-            ->get(['id', 'account_type']);
-
-        if ($accounts->isEmpty()) return 0.0;
-
-        $accountIds = $accounts->pluck('id')->all();
-        $endDate = $endDate ? $endDate->copy()->endOfDay() : now()->endOfDay();
-        $startDate = $startDate ? $startDate->copy()->startOfDay() : null;
-
-        $query = DB::table('journal_entry_lines')
-            ->join('journal_entries', 'journal_entry_lines.journal_entry_id', '=', 'journal_entries.id')
-            ->whereIn('journal_entry_lines.chart_of_account_id', $accountIds)
-            ->select(
-                'journal_entry_lines.chart_of_account_id',
-                DB::raw('SUM(journal_entry_lines.debit) as total_debit'),
-                DB::raw('SUM(journal_entry_lines.credit) as total_credit')
-            );
-
-        if ($startDate) {
-            $query->whereBetween('journal_entries.transaction_date', [$startDate, $endDate]);
-        } else {
-            $query->where('journal_entries.transaction_date', '<=', $endDate);
-        }
-
-        $results = $query->groupBy('journal_entry_lines.chart_of_account_id')->get()->keyBy('chart_of_account_id');
-        $totalBalance = 0;
-
-        foreach ($accounts as $account) {
-            $result = $results->get($account->id);
-            if ($result) {
-                $rawBalance = ($result->total_debit ?? 0) - ($result->total_credit ?? 0);
-                $totalBalance += $this->adjustBalanceSign($rawBalance, $account->account_type);
-            }
-        }
-
-        return round($totalBalance, 2);
-    }
-
-    /**
-     * Sums the total adjusted balance for a list of account types.
-     */
-    private function getSummedBalanceForType(array $types, ?Carbon $startDate = null, ?Carbon $endDate = null): float {
-        $companyId = $this->getCompanyId();
-        $accounts = ChartOfAccount::where('company_id', $companyId)->whereIn('account_type', $types)->get(['id', 'account_type']);
-
-        if ($accounts->isEmpty()) return 0.0;
-
-        $accountIds = $accounts->pluck('id')->all();
-        $endDate = $endDate ? $endDate->copy()->endOfDay() : now()->endOfDay();
-        $startDate = $startDate ? $startDate->copy()->startOfDay() : null;
-
-        $query = DB::table('journal_entry_lines')
-            ->join('journal_entries', 'journal_entry_lines.journal_entry_id', '=', 'journal_entries.id')
-            ->whereIn('journal_entry_lines.chart_of_account_id', $accountIds)
-            ->select(
-                'journal_entry_lines.chart_of_account_id',
-                DB::raw('SUM(journal_entry_lines.debit) as total_debit'),
-                DB::raw('SUM(journal_entry_lines.credit) as total_credit')
-            );
-
-        if ($startDate) { $query->whereBetween('journal_entries.transaction_date', [$startDate, $endDate]); } else { $query->where('journal_entries.transaction_date', '<=', $endDate); }
-
-        $results = $query->groupBy('journal_entry_lines.chart_of_account_id')->get()->keyBy('chart_of_account_id');
-        $totalBalance = 0;
-
-        foreach ($accounts as $account) {
-            $result = $results->get($account->id);
-            if ($result) {
-                $rawBalance = ($result->total_debit ?? 0) - ($result->total_credit ?? 0);
-                $totalBalance += $this->adjustBalanceSign($rawBalance, $account->account_type);
-            }
-        }
-
-        return round($totalBalance, 2);
-    }
-
-    /**
-     * Reverses the sign of the raw balance for Liability, Equity, and Revenue accounts.
-     */
-    public function adjustBalanceSign(float $rawBalance, string $accountType): float {
-        if (in_array($accountType, ['Liability', 'Equity', 'Revenue', 'Income', 'Other Income', 'Sales'])) {
-            return -$rawBalance;
-        }
-        return $rawBalance;
-    }
-
-    /**
-     * Helper to fetch cumulative balances for ALL Balance Sheet accounts.
+     * Helper to fetch cumulative balances for ALL Balance Sheet accounts (Used for Cash Flow).
      */
     private function getAllAccountBalancesCumulative(Carbon $date): Collection
     {

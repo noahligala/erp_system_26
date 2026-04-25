@@ -172,6 +172,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/general-ledger', [AccountingController::class, 'getGeneralLedger']);
         Route::get('/key-ratios', [AccountingController::class, 'getKeyRatios']);
+        Route::get('/dashboard-summary', [AccountingController::class, 'getDashboardSummary']);
+        Route::get('/financial-trends', [AccountingController::class, 'getFinancialTrends']);
+        Route::get('/alerts', [AccountingController::class, 'getAlerts']);
 
         // Report Archives
         Route::get('/archived-reports', [AccountingController::class, 'listArchivedReports']);
