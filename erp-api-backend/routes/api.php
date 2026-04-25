@@ -242,7 +242,7 @@ Route::middleware('auth:sanctum')->group(function () {
         return ['ok' => true];
     });
 
-    Route::post('/applicants/{applicant}/hire', [ApplicantController::class, 'hire']);
+    Route::middleware('auth:sanctum')->post('/applicants/{applicant}/hire', [ApplicantController::class, 'hire']);
     Route::apiResource('applicants', ApplicantController::class); // Your existing resource route
 
 });

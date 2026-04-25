@@ -26,7 +26,7 @@ class EmployeeProfile extends Model
 
     // Default status for new records
     protected $attributes = [
-        'status' => 'active',
+        'status' => 'nullable|string|in:active,inactive,pending,probation,terminated',
     ];
 
     /**
