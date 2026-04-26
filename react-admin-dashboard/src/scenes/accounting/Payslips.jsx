@@ -272,10 +272,10 @@ const Payslips = () => {
       await fetchPayslips(monthStr);
 
     } catch (err) { /* ... error handling ... */ }
-     finally { setIsProcessing(false); }
+    finally { setIsProcessing(false); }
   };
 
- const handleDateChange = async (date) => {
+  const handleDateChange = async (date) => {
     if (!date || isProcessing) return; // Prevent change during processing
     setEditing(false); // Stop editing when changing month
     setSelectedDate(date);
@@ -327,9 +327,9 @@ const Payslips = () => {
       await fetchPayslips(`${month}-${year}`); // Refresh data for the *current* month after generation
 
     } catch (err) {
-       console.error("Generate Payslips Error:", err);
-       const errorMsg = err.response?.data?.message || err.response?.data?.error || "Failed to generate payslips.";
-       toast.error(errorMsg);
+      console.error("Generate Payslips Error:", err);
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || "Failed to generate payslips.";
+        toast.error(errorMsg);
     } finally {
       setIsProcessing(false); // End processing
     }
@@ -362,7 +362,7 @@ const Payslips = () => {
   };
 
   const handleRemoveDynamicItem = (listType, index) => {
-     setFormExtras(prev => ({
+    setFormExtras(prev => ({
       ...prev,
       [listType]: prev[listType].filter((_, i) => i !== index)
     }));
@@ -382,7 +382,7 @@ const Payslips = () => {
 
     let deductionsHTML = ''; // Start empty for statutory items
     const deductionItems = Array.isArray(extras?.deductions) ? extras.deductions : [];
-     if (deductionItems.length > 0 && deductionItems.some(d => parseFloat(d.amount) > 0)) {
+    if (deductionItems.length > 0 && deductionItems.some(d => parseFloat(d.amount) > 0)) {
         deductionsHTML = deductionItems
             .filter(d => parseFloat(d.amount) > 0)
             .map(d => `<tr><td>${d.name}</td><td style="text-align: right;">${formatCurrency(d.amount)}</td></tr>`)
@@ -442,12 +442,12 @@ const Payslips = () => {
   };
 
   const handlePrintAll = () => {
-     if (payslips.length === 0 || !payslips.every(p => p.id)) {
+    if (payslips.length === 0 || !payslips.every(p => p.id)) {
         toast.warn("No generated payslips available to print for this month.");
         return;
     }
     const printWindow = window.open('', '_blank', 'height=600,width=800');
-     if (printWindow) {
+    if (printWindow) {
         let allHTML = `<html><head><title>All Payslips - ${formatMonth(selectedDate?.toFormat('n-yyyy'))}</title><style> body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif; margin: 20px; font-size: 10pt; color: #212121; } h1, h2, h3 { text-align: center; color: #1a237e; margin-bottom: 5px; } h1 {font-size: 1.5em;} h3 {font-size: 1.2em;} h2 { margin-bottom: 20px; font-size: 1.1em; color: #555;} table { width: 100%; border-collapse: collapse; margin-bottom: 15px; } th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; } th { background-color: #f0f0f0; font-weight: 600; color: #333;} .section-title { font-weight: 600; margin-top: 15px; border-bottom: 2px solid #3f51b5; padding-bottom: 4px; margin-bottom: 8px; font-size: 1.1em; color: #3f51b5; } .summary-table td { font-weight: 600; } .total td { font-size: 1.1em; font-weight: bold; background-color: #e8f5e9; border-top: 2px solid #66bb6a; color: #1b5e20; } .right { text-align: right; } .no-border-cell { border: none; } .sub-table { margin-top: 5px !important; width: 100%; } .sub-table td { border: none; padding: 4px 0px; border-bottom: 1px dotted #eee; } .sub-table tr:last-child td { border-bottom: none; } strong { font-weight: 600; } @media print { .page-break { page-break-after: always; } } </style></head><body>`;
 
         payslips.forEach((payslip, index) => {
@@ -548,16 +548,16 @@ const Payslips = () => {
             
             {/* Print Buttons */}
             <Box sx={{ position: 'absolute', top: {xs: 8, md: 16}, right: {xs: 8, md: 16}, display: 'flex', flexDirection: {xs: 'column', sm: 'row'}, gap: 1, zIndex: 5 }}>
-                 <Tooltip title="Print This Payslip">
+                <Tooltip title="Print This Payslip">
                     <span>
                         <Button variant="contained" sx={{backgroundColor: colors.blueAccent[700], '&:hover': {backgroundColor: colors.blueAccent[600]}}} size="small" startIcon={<PrintIcon />} onClick={handlePrintCurrent} disabled={!form.id || isProcessing || loading}> Slip </Button>
                     </span>
-                 </Tooltip>
-                 <Tooltip title="Print All Payslips for this Month">
+                </Tooltip>
+                <Tooltip title="Print All Payslips for this Month">
                     <span>
                         <Button variant="contained" sx={{backgroundColor: colors.blueAccent[700], '&:hover': {backgroundColor: colors.blueAccent[600]}}} size="small" startIcon={<PrintIcon />} onClick={handlePrintAll} disabled={!payslips.every(p => p.id) || isProcessing || loading}> All </Button>
                     </span>
-                 </Tooltip>
+                </Tooltip>
             </Box>
             
             <Grid container spacing={3}>
@@ -601,11 +601,11 @@ const Payslips = () => {
                     <Paper elevation={0} sx={{ p: 2, backgroundColor: colors.primary[500], borderRadius: '8px' }}>
                         <Typography variant="h5" gutterBottom sx={{ color: colors.greenAccent[400], mb: 2 }}>Salary Details & Calculations</Typography>
                         <Grid container spacing={2}>
-                             <Grid item xs={12} sm={6} md={3}><TextField label="Basic Salary" fullWidth name="basic_salary" value={form.basic_salary || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
-                             <Grid item xs={12} sm={6} md={3}><TextField label="Gross Income" fullWidth name="gross_income" value={form.gross_income || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
-                             <Grid item xs={12} sm={6} md={3}><TextField label="Tax Paid (PAYE)" fullWidth name="tax_paid" value={form.tax_paid || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
-                             <Grid item xs={12} sm={6} md={3}><TextField label="Loan Repayment" fullWidth name="loan_repayment" value={form.loan_repayment || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
-                             <Grid item xs={12} sm={6} md={3}><TextField label="Advance Repayment" fullWidth name="advance_repayment" value={form.advance_repayment || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
+                            <Grid item xs={12} sm={6} md={3}><TextField label="Basic Salary" fullWidth name="basic_salary" value={form.basic_salary || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
+                            <Grid item xs={12} sm={6} md={3}><TextField label="Gross Income" fullWidth name="gross_income" value={form.gross_income || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
+                            <Grid item xs={12} sm={6} md={3}><TextField label="Tax Paid (PAYE)" fullWidth name="tax_paid" value={form.tax_paid || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
+                            <Grid item xs={12} sm={6} md={3}><TextField label="Loan Repayment" fullWidth name="loan_repayment" value={form.loan_repayment || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
+                            <Grid item xs={12} sm={6} md={3}><TextField label="Advance Repayment" fullWidth name="advance_repayment" value={form.advance_repayment || "0"} type="number" disabled={!editing || !isEditable} onChange={handleFormChange} size="small"/></Grid>
                         </Grid>
                         {/* Dynamic Lists */}
                         <Grid container spacing={3} sx={{ mt: 1 }}>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -6,7 +6,6 @@ import {
   Button,
   IconButton,
   Chip,
-  CircularProgress,
   Alert,
   Snackbar,
   Select,
@@ -20,51 +19,98 @@ import {
   DialogTitle,
   TextField,
   Tooltip,
+  Paper,
+  Stack,
+  Fade,
+  Grow,
+  Divider,
 } from "@mui/material";
-import { DataGrid, GridToolbar } from "@mui/x-data-grid";
+import { alpha } from "@mui/material/styles";
+import { DataGrid, GridToolbarContainer, GridToolbarQuickFilter } from "@mui/x-data-grid";
 import {
   CheckCircleOutline,
   HighlightOff,
   HourglassEmpty,
   Refresh,
-  ThumbUpAltOutlined, // Approve Icon
-  ThumbDownAltOutlined, // Reject Icon
+  ThumbUpAltOutlined,
+  ThumbDownAltOutlined,
+  CancelOutlined,
+  FilterListOutlined
 } from "@mui/icons-material";
 import { DateTime } from "luxon";
+
 import Header from "../../components/Header";
 import { tokens } from "../../theme";
 import { useAuth } from "../../api/AuthProvider";
 
+const appleFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif";
+
 const LeaveManagement = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
-  const { apiClient, isAuthenticated, user } = useAuth(); // Get user role
+  const isDark = theme.palette.mode === "dark";
+  const { apiClient, isAuthenticated, user } = useAuth();
 
+  // ==========================================
+  // 🛡️ CRASH-PROOF COLOR ENGINE
+  // ==========================================
+  const getColor = useCallback((colorPath, fallback = "#888888") => {
+    try {
+      const parts = colorPath.split('.');
+      let value = colors;
+      for (const part of parts) {
+        if (!value || typeof value !== 'object') return fallback;
+        value = value[part];
+      }
+      return value || fallback;
+    } catch (error) {
+      return fallback;
+    }
+  }, [colors]);
+
+  const safeColors = useMemo(() => ({
+    primary: { main: getColor('primary[500]', '#1976d2') },
+    greenAccent: { main: getColor('greenAccent[500]', '#4caf50') },
+    redAccent: { main: getColor('redAccent[500]', '#f44336') },
+    blueAccent: { main: getColor('blueAccent[500]', '#2196f3') },
+    orangeAccent: { main: getColor('orangeAccent[500]', '#ff9800') },
+    grey: {
+      50: getColor('grey[50]', '#fafafa'),
+      100: getColor('grey[100]', '#f5f5f5'),
+      200: getColor('grey[200]', '#eeeeee'),
+      300: getColor('grey[300]', '#e0e0e0'),
+      400: getColor('grey[400]', '#bdbdbd'),
+      500: getColor('grey[500]', '#9e9e9e'),
+      600: getColor('grey[600]', '#757575'),
+      700: getColor('grey[700]', '#616161'),
+      800: getColor('grey[800]', '#424242'),
+      900: getColor('grey[900]', '#212121'),
+    }
+  }), [getColor]);
+
+  // State Management
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Server-side pagination and filtering state
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 15 });
   const [rowCount, setRowCount] = useState(0);
-  const [filterStatus, setFilterStatus] = useState("pending"); // Default to pending
+  const [filterStatus, setFilterStatus] = useState("pending");
 
-  // Rejection dialog state
+  // Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState(null); // Request to be rejected
+  const [selectedRequest, setSelectedRequest] = useState(null);
   const [rejectionReason, setRejectionReason] = useState("");
-  const [rejectError, setRejectError] = useState(""); // Error specifically for the dialog
+  const [rejectError, setRejectError] = useState("");
 
-  // Check if the current user is authorized to manage leave
   const canManageLeave = user && ['MANAGER', 'ADMIN', 'OWNER'].includes(user.company_role);
 
-  // --- Data Fetching ---
+  // ==========================================
+  // DATA FETCHING
+  // ==========================================
   const fetchLeaveRequests = useCallback(async () => {
-    if (!isAuthenticated) {
-      setError("Authentication required.");
-      return;
-    }
+    if (!isAuthenticated) return setError("Authentication required.");
     setLoading(true);
     setError("");
     try {
@@ -75,26 +121,16 @@ const LeaveManagement = () => {
       };
 
       const response = await apiClient.get("/leave-requests", { params });
-
-      // console.log("Full API Response:", response); // Keep for debugging if needed
       const responseData = response.data;
 
-      if (responseData?.status === "success" && responseData.data) {
-        if (responseData.data.data && Array.isArray(responseData.data.data)) {
-          // console.log("Actual Leave Request Data Received:", responseData.data.data); // Keep for debugging if needed
-          setLeaveRequests(responseData.data.data);
-          setRowCount(responseData.data.total || 0);
-        } else {
-           console.error("API Error: Expected paginated data array", responseData.data);
-           throw new Error("Invalid data structure received (pagination expected).");
-        }
+      if (responseData?.status === "success" && responseData.data?.data) {
+        setLeaveRequests(responseData.data.data);
+        setRowCount(responseData.data.total || 0);
       } else {
-        console.error("API Error: Request status not 'success'", responseData);
-        throw new Error(responseData?.message || "Failed to fetch requests (unknown structure)");
+        throw new Error(responseData?.message || "Failed to fetch requests.");
       }
-
     } catch (err) {
-      console.error("Error fetching leave requests:", err);
+      console.error("Fetch leave requests error:", err);
       setError(err.response?.data?.message || err.message || "Could not load requests.");
       setLeaveRequests([]);
       setRowCount(0);
@@ -103,24 +139,21 @@ const LeaveManagement = () => {
     }
   }, [apiClient, isAuthenticated, paginationModel, filterStatus]);
 
-  useEffect(() => {
-    fetchLeaveRequests();
-  }, [fetchLeaveRequests]);
+  useEffect(() => { fetchLeaveRequests(); }, [fetchLeaveRequests]);
 
-  // --- Action Handlers ---
+  // ==========================================
+  // ACTION HANDLERS
+  // ==========================================
   const handleApprove = async (id) => {
     if (!canManageLeave) return;
     setError(""); setSuccess("");
     try {
       const response = await apiClient.patch(`/leave-requests/${id}/approve`);
       if (response.data?.status === "success") {
-        setSuccess("Leave request approved successfully!");
+        setSuccess("Leave request approved successfully.");
         fetchLeaveRequests();
-      } else {
-        throw new Error(response.data?.message || "Failed to approve request");
-      }
+      } else throw new Error(response.data?.message || "Failed to approve request");
     } catch (err) {
-      console.error("Approve error:", err);
       setError(err.response?.data?.message || err.message || "Could not approve request.");
     }
   };
@@ -134,10 +167,7 @@ const LeaveManagement = () => {
   };
 
   const handleRejectConfirm = async () => {
-    if (!selectedRequest || !rejectionReason.trim()) {
-      setRejectError("Rejection reason is required.");
-      return;
-    }
+    if (!rejectionReason.trim()) return setRejectError("Rejection reason is required.");
     if (!canManageLeave) return;
 
     setRejectError("");
@@ -146,16 +176,13 @@ const LeaveManagement = () => {
         rejection_reason: rejectionReason,
       });
       if (response.data?.status === "success") {
-        setSuccess("Leave request rejected successfully!");
+        setSuccess("Leave request rejected.");
         setDialogOpen(false);
         setSelectedRequest(null);
         fetchLeaveRequests();
-      } else {
-         throw new Error(response.data?.message || "Failed to reject request");
-      }
+      } else throw new Error(response.data?.message || "Failed to reject request");
     } catch (err) {
-        console.error("Reject error:", err);
-        setRejectError(err.response?.data?.message || err.message || "Could not reject request.");
+      setRejectError(err.response?.data?.message || err.message || "Could not reject request.");
     }
   };
 
@@ -164,259 +191,263 @@ const LeaveManagement = () => {
     setSelectedRequest(null);
   };
 
-  // --- Formatting Helpers ---
-  const formatDate = (value, fieldName) => {
-    // console.log(`formatDate for ${fieldName} received:`, value, typeof value);
-    if (!value || typeof value !== 'string') {
-        return "N/A";
-    }
-    try {
-      const dt = DateTime.fromISO(value);
-      if (!dt.isValid) {
-        console.warn(`Luxon failed to parse date for ${fieldName}:`, value, dt.invalidReason);
-        return "Invalid Date";
-      }
-      return dt.toLocaleString(DateTime.DATE_MED);
-    } catch (e) {
-      console.error(`Error during formatDate for ${fieldName}:`, e, "Input:", value);
-      return "Format Error";
-    }
+  // ==========================================
+  // FORMATTERS
+  // ==========================================
+  const formatLuxonDate = (val, withTime = false) => {
+    if (!val) return "N/A";
+    const dt = DateTime.fromISO(val);
+    if (!dt.isValid) return "Invalid";
+    return withTime ? dt.toFormat('dd MMM yyyy, hh:mm a') : dt.toLocaleString(DateTime.DATE_MED);
   };
-
-  const formatDateTime = (value, fieldName) => {
-    //  console.log(`formatDateTime for ${fieldName} received:`, value, typeof value);
-     if (!value || typeof value !== 'string') {
-        return "N/A";
-    }
-     try {
-        const dt = DateTime.fromISO(value);
-        if (!dt.isValid) {
-            console.warn(`Luxon failed to parse datetime for ${fieldName}:`, value, dt.invalidReason);
-            return "Invalid DateTime";
-        }
-        return dt.toFormat('dd MMM yyyy, hh:mm a');
-     } catch (e) {
-         console.error(`Error during formatDateTime for ${fieldName}:`, e, "Input:", value);
-         return "Format Error";
-     }
-  }
 
   const getStatusChip = (status) => {
-    let color = "default";
+    let color = safeColors.grey[500];
     let icon = null;
-    switch (status) {
-      case 'pending': color = 'warning'; icon = <HourglassEmpty sx={{ fontSize: '1rem', mr: 0.5 }}/>; break;
-      case 'approved': color = 'success'; icon = <CheckCircleOutline sx={{ fontSize: '1rem', mr: 0.5 }}/>; break;
-      case 'rejected': color = 'error'; icon = <HighlightOff sx={{ fontSize: '1rem', mr: 0.5 }}/>; break;
-      case 'cancelled': color = 'default'; break;
-      default: break;
+    let bgColor = alpha(safeColors.grey[500], 0.1);
+
+    if (status === 'pending') {
+      color = safeColors.orangeAccent.main;
+      icon = <HourglassEmpty sx={{ fontSize: '1rem' }}/>;
+      bgColor = alpha(safeColors.orangeAccent.main, 0.15);
+    } else if (status === 'approved') {
+      color = safeColors.greenAccent.main;
+      icon = <CheckCircleOutline sx={{ fontSize: '1rem' }}/>;
+      bgColor = alpha(safeColors.greenAccent.main, 0.15);
+    } else if (status === 'rejected') {
+      color = safeColors.redAccent.main;
+      icon = <HighlightOff sx={{ fontSize: '1rem' }}/>;
+      bgColor = alpha(safeColors.redAccent.main, 0.15);
+    } else if (status === 'cancelled') {
+      color = safeColors.grey[400];
+      icon = <CancelOutlined sx={{ fontSize: '1rem' }}/>;
+      bgColor = alpha(safeColors.grey[500], 0.1);
     }
-    return <Chip label={status} color={color} size="small" icon={icon} sx={{ textTransform: 'capitalize' }}/>;
+
+    return (
+      <Chip 
+        label={(status || "Unknown").toUpperCase()} 
+        icon={icon}
+        size="small"
+        sx={{ 
+          fontWeight: 700, fontSize: '0.65rem', borderRadius: '6px', height: '22px',
+          backgroundColor: bgColor, color: color, '& .MuiChip-icon': { color: color }
+        }} 
+      />
+    );
   };
 
-  // --- DataGrid Columns ---
+  // ==========================================
+  // DATAGRID CONFIG
+  // ==========================================
   const columns = [
-    { field: "id", headerName: "ID", width: 60 },
+    { field: "id", headerName: "ID", width: 70 },
+    { field: "employee", headerName: "Employee", width: 180, valueGetter: (params) => params?.row?.user?.name || 'N/A' },
+    { field: "leaveType", headerName: "Leave Type", width: 150, valueGetter: (params) => params?.row?.leave_type?.name || 'N/A' },
+    { field: "start_date", headerName: "Start Date", width: 120, renderCell: (params) => formatLuxonDate(params.row.start_date) },
+    { field: "end_date", headerName: "End Date", width: 120, renderCell: (params) => formatLuxonDate(params.row.end_date) },
     {
-      field: "employee", headerName: "Employee", width: 180,
-      valueGetter: (params) => params?.row?.user?.name || 'N/A',
+      field: "reason", headerName: "Reason", width: 220,
+      renderCell: (params) => (
+        <Tooltip title={params.row.reason || ''} placement="bottom-start">
+          <Typography variant="body2" noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.85rem' }}>
+            {params.row.reason || 'N/A'}
+          </Typography>
+        </Tooltip>
+      )
     },
-    {
-      field: "leaveType", headerName: "Leave Type", width: 150,
-      valueGetter: (params) => params?.row?.leave_type?.name || 'N/A',
-    },
-    {
-      field: "start_date", headerName: "Start Date", width: 120,
-      // --- FIX: Check if params exists ---
-      valueFormatter: (params) => params ? formatDate(params.value, 'start_date') : 'N/A',
-    },
-    {
-      field: "end_date", headerName: "End Date", width: 120,
-      // --- FIX: Check if params exists ---
-      valueFormatter: (params) => params ? formatDate(params.value, 'end_date') : 'N/A',
-    },
-    {
-        field: "reason", headerName: "Reason", width: 250,
-        renderCell: (params) => (
-            <Tooltip title={params.value || ''} placement="bottom-start">
-                <Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {params.value || 'N/A'}
-                </Typography>
-            </Tooltip>
-        )
-    },
-    {
-      field: "status", headerName: "Status", width: 120,
-      renderCell: (params) => getStatusChip(params.value),
-    },
-     {
-      field: "created_at", headerName: "Requested On", width: 160,
-      // --- FIX: Check if params exists ---
-      valueFormatter: (params) => params ? formatDateTime(params.value, 'created_at') : 'N/A',
-    },
-    {
-      field: "approver", headerName: "Actioned By", width: 150,
-      valueGetter: (params) => params?.row?.approver?.name || 'N/A',
-    },
-     {
-      field: "approved_at", headerName: "Actioned At", width: 160,
-      // --- FIX: Check if params exists ---
-      valueFormatter: (params) => params ? formatDateTime(params.value, 'approved_at') : 'N/A',
-    },
-    // --- Actions Column (Conditional) ---
+    { field: "status", headerName: "Status", width: 130, renderCell: (params) => getStatusChip(params.row.status) },
+    { field: "created_at", headerName: "Requested On", width: 170, renderCell: (params) => formatLuxonDate(params.row.created_at, true) },
+    { field: "approver", headerName: "Actioned By", width: 150, valueGetter: (params) => params?.row?.approver?.name || '—' },
     ...(canManageLeave ? [{
-      field: "actions",
-      headerName: "Actions",
-      width: 150,
-      sortable: false,
-      filterable: false,
-      disableColumnMenu: true,
+      field: "actions", headerName: "Actions", width: 120, sortable: false, filterable: false, disableColumnMenu: true,
       renderCell: (params) => (
         params.row.status === 'pending' ? (
-          <Box display="flex" justifyContent="center" gap={1}>
-            <Tooltip title="Approve Request">
-              <IconButton
-                size="small"
-                onClick={() => handleApprove(params.row.id)}
-                sx={{ color: colors.greenAccent[400], '&:hover': { backgroundColor: colors.greenAccent[800] } }}
-              >
+          <Stack direction="row" spacing={0.5}>
+            <Tooltip title="Approve">
+              <IconButton size="small" onClick={() => handleApprove(params.row.id)} sx={{ color: safeColors.greenAccent.main, backgroundColor: alpha(safeColors.greenAccent.main, 0.1), '&:hover': { backgroundColor: safeColors.greenAccent.main, color: '#fff' } }}>
                 <ThumbUpAltOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Reject Request">
-              <IconButton
-                size="small"
-                onClick={() => handleRejectClick(params.row)}
-                sx={{ color: colors.redAccent[500], '&:hover': { backgroundColor: colors.redAccent[700] } }}
-              >
+            <Tooltip title="Reject">
+              <IconButton size="small" onClick={() => handleRejectClick(params.row)} sx={{ color: safeColors.redAccent.main, backgroundColor: alpha(safeColors.redAccent.main, 0.1), '&:hover': { backgroundColor: safeColors.redAccent.main, color: '#fff' } }}>
                 <ThumbDownAltOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
-          </Box>
+          </Stack>
         ) : null
       ),
     }] : []),
   ];
 
-  // --- Render UI ---
+  const CustomToolbar = () => (
+    <GridToolbarContainer sx={{ p: 1.5, display: 'flex', justifyContent: 'flex-end', borderBottom: `1px solid ${alpha(safeColors.grey[500], 0.15)}` }}>
+      <GridToolbarQuickFilter sx={{ width: '250px', '& .MuiInputBase-root': { fontFamily: appleFont } }} />
+    </GridToolbarContainer>
+  );
+
+  // ==========================================
+  // STYLES
+  // ==========================================
+  const tableWrapperSx = {
+    borderRadius: "20px",
+    p: 0,
+    overflow: 'hidden',
+    backgroundColor: isDark ? theme.palette.background.default : '#ffffff',
+    border: `1px solid ${isDark ? alpha(safeColors.grey[700], 0.4) : alpha(safeColors.grey[300], 0.5)}`,
+    boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.2)' : '0 10px 30px rgba(0,0,0,0.03)',
+    backgroundImage: 'none'
+  };
+
   return (
-    <Box m={{ xs: "10px", md: "20px" }}>
-      <Header title="LEAVE MANAGEMENT" subtitle="View and manage employee leave requests" />
+    <Box m={{ xs: "12px", md: "20px" }} sx={{ '& *': { fontFamily: appleFont } }}>
+      <Header title="LEAVE MANAGEMENT" subtitle="Review, approve, and track employee time-off requests" />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && (
+        <Grow in={true}><Alert severity="error" sx={{ mb: 3, borderRadius: '14px' }}>{error}</Alert></Grow>
+      )}
 
-      {/* --- Filter Controls --- */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-         <FormControl variant="filled" sx={{ minWidth: 180 }}>
-            <InputLabel id="status-filter-label">Filter by Status</InputLabel>
-            <Select
-              labelId="status-filter-label"
-              value={filterStatus}
-              onChange={(e) => {
-                setFilterStatus(e.target.value);
-                setPaginationModel(prev => ({ ...prev, page: 0 }));
+      {/* ===== ACTION BAR & DATAGRID ===== */}
+      <Fade in={true} timeout={600}>
+        <Paper elevation={0} sx={tableWrapperSx}>
+          
+          {/* Custom Header / Filters */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems="center" p={2.5} sx={{ borderBottom: `1px solid ${alpha(safeColors.grey[500], 0.15)}`, backgroundColor: isDark ? theme.palette.background.default : alpha(safeColors.grey[50], 0.5) }}>
+            <Typography variant="h5" fontWeight={700} color={safeColors.grey[100]} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FilterListOutlined /> Request Roster
+            </Typography>
+            
+            <Stack direction="row" spacing={2} alignItems="center" mt={{ xs: 2, sm: 0 }}>
+              <FormControl size="small" sx={{ minWidth: 160 }}>
+                <InputLabel sx={{ fontFamily: appleFont }}>Status Filter</InputLabel>
+                <Select
+                  value={filterStatus}
+                  label="Status Filter"
+                  onChange={(e) => { setFilterStatus(e.target.value); setPaginationModel(prev => ({ ...prev, page: 0 })); }}
+                  sx={{ borderRadius: '10px', fontFamily: appleFont }}
+                >
+                  <MenuItem value="all">All Requests</MenuItem>
+                  <MenuItem value="pending">Pending</MenuItem>
+                  <MenuItem value="approved">Approved</MenuItem>
+                  <MenuItem value="rejected">Rejected</MenuItem>
+                  <MenuItem value="cancelled">Cancelled</MenuItem>
+                </Select>
+              </FormControl>
+
+              <Tooltip title="Sync Data">
+                <IconButton onClick={fetchLeaveRequests} sx={{ backgroundColor: alpha(safeColors.blueAccent.main, 0.1), color: safeColors.blueAccent.main, borderRadius: '10px' }}>
+                  <Refresh />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          </Stack>
+
+          {/* Grid */}
+          <Box height="68vh" width="100%">
+            <DataGrid
+              rows={leaveRequests}
+              columns={columns}
+              loading={loading}
+              rowCount={rowCount}
+              paginationModel={paginationModel}
+              onPaginationModelChange={setPaginationModel}
+              pageSizeOptions={[15, 30, 50]}
+              paginationMode="server"
+              getRowId={(row) => row.id}
+              disableRowSelectionOnClick
+              density="compact"
+              slots={{ toolbar: CustomToolbar }}
+              sx={{
+                border: "none",
+                fontFamily: appleFont,
+                backgroundColor: isDark ? theme.palette.background.default : '#ffffff',
+                "& .MuiDataGrid-columnHeaders": {
+                  backgroundColor: isDark ? theme.palette.background.default : safeColors.grey[50],
+                  borderBottom: `1px solid ${alpha(safeColors.grey[500], 0.2)}`,
+                },
+                "& .MuiDataGrid-columnHeaderTitle": {
+                  fontWeight: 700, color: safeColors.grey[300], textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.5px'
+                },
+                "& .MuiDataGrid-row": {
+                  transition: "background-color 0.2s ease", '&:hover': { backgroundColor: alpha(safeColors.blueAccent.main, 0.04) }
+                },
+                "& .MuiDataGrid-cell": {
+                  borderBottom: `1px solid ${alpha(safeColors.grey[500], 0.1)}`, display: 'flex', alignItems: 'center', fontSize: '0.85rem'
+                },
+                "& .MuiDataGrid-footerContainer": {
+                  borderTop: `1px solid ${alpha(safeColors.grey[500], 0.15)}`, backgroundColor: isDark ? theme.palette.background.default : safeColors.grey[50],
+                },
               }}
-              label="Filter by Status"
-            >
-              <MenuItem value="all">All</MenuItem>
-              <MenuItem value="pending">Pending</MenuItem>
-              <MenuItem value="approved">Approved</MenuItem>
-              <MenuItem value="rejected">Rejected</MenuItem>
-              <MenuItem value="cancelled">Cancelled</MenuItem>
-            </Select>
-         </FormControl>
-         <Tooltip title="Refresh Data">
-            <IconButton onClick={fetchLeaveRequests}>
-                 <Refresh />
-            </IconButton>
-        </Tooltip>
-      </Box>
+            />
+          </Box>
+        </Paper>
+      </Fade>
 
-      {/* --- Data Grid --- */}
-      <Box
-         height="75vh"
-         sx={{
-            "& .MuiDataGrid-root": { border: "none" },
-            "& .MuiDataGrid-cell": { borderBottom: "none", py: 0.5 },
-            "& .MuiDataGrid-columnHeaders": { backgroundColor: colors.blueAccent[700], borderBottom: "none" },
-            "& .MuiDataGrid-virtualScroller": { backgroundColor: colors.primary[400] },
-            "& .MuiDataGrid-footerContainer": { borderTop: "none", backgroundColor: colors.blueAccent[700] },
-            "& .MuiCheckbox-root": { color: `${colors.greenAccent[200]} !important` },
-            "& .MuiDataGrid-toolbarContainer .MuiButton-text": { color: `${colors.grey[100]} !important` },
-          }}
+      {/* ===== REJECTION DIALOG ===== */}
+      <Dialog 
+        open={dialogOpen} 
+        onClose={handleDialogClose} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            backgroundColor: isDark ? safeColors.primary.main : '#fff',
+            backgroundImage: 'none',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+            '& *': { fontFamily: appleFont }
+          }
+        }}
       >
-        <DataGrid
-          rows={leaveRequests}
-          columns={columns}
-          loading={loading}
-          rowCount={rowCount}
-          paginationModel={paginationModel}
-          onPaginationModelChange={setPaginationModel}
-          pageSizeOptions={[15, 30, 50]}
-          paginationMode="server"
-          filterMode="server"
-          getRowId={(row) => row.id}
-          disableRowSelectionOnClick
-          slots={{ toolbar: GridToolbar }}
-          slotProps={{
-            toolbar: {
-              showQuickFilter: true,
-              quickFilterProps: { debounceMs: 500 },
-            },
-          }}
-          density="compact"
-        />
-      </Box>
-
-      {/* --- Rejection Dialog --- */}
-      <Dialog open={dialogOpen} onClose={handleDialogClose} maxWidth="sm" fullWidth>
-         <DialogTitle sx={{ bgcolor: colors.primary[400], borderBottom: `1px solid ${colors.grey[700]}` }}>
-           Reject Leave Request
-         </DialogTitle>
-         <DialogContent sx={{ bgcolor: colors.primary[400], pt: '20px !important' }}>
-             <DialogContentText sx={{ mb: 2, color: colors.grey[200] }}>
-               Please provide a reason for rejecting the leave request for{' '}
-               <strong>{selectedRequest?.user?.name || 'this employee'}</strong> from{' '}
-               <strong>{formatDate(selectedRequest?.start_date)}</strong> to{' '}
-               <strong>{formatDate(selectedRequest?.end_date)}</strong>.
-             </DialogContentText>
-             {rejectError && <Alert severity="error" sx={{ mb: 2 }}>{rejectError}</Alert>}
-             <TextField
-               autoFocus
-               margin="dense"
-               id="rejection_reason"
-               label="Rejection Reason *"
-               type="text"
-               fullWidth
-               variant="filled"
-               multiline
-               rows={3}
-               value={rejectionReason}
-               onChange={(e) => {
-                   setRejectionReason(e.target.value);
-                   if (e.target.value.trim()) setRejectError("");
-               }}
-               error={!!rejectError}
-               helperText={rejectError || ""}
-             />
-         </DialogContent>
-         <DialogActions sx={{ bgcolor: colors.primary[400], px: 3, pb: 2, borderTop: `1px solid ${colors.grey[700]}` }}>
-             <Button onClick={handleDialogClose} sx={{ color: colors.grey[100] }}>Cancel</Button>
-             <Button
-               onClick={handleRejectConfirm}
-               variant="contained"
-               color="error"
-             >
-               Confirm Rejection
-             </Button>
-         </DialogActions>
+        <DialogTitle sx={{ pt: 3, pb: 2, px: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ p: 1, borderRadius: '12px', backgroundColor: alpha(safeColors.redAccent.main, 0.1), color: safeColors.redAccent.main, display: 'flex' }}>
+            <HighlightOff />
+          </Box>
+          <Typography variant="h5" fontWeight={800}>Reject Leave Request</Typography>
+        </DialogTitle>
+        <Divider sx={{ borderColor: alpha(safeColors.grey[500], 0.1) }} />
+        
+        <DialogContent sx={{ px: 3, py: 3 }}>
+          <DialogContentText sx={{ mb: 3, color: safeColors.grey[300] }}>
+            You are rejecting the leave request for <Typography component="span" fontWeight={700} color={safeColors.grey[100]}>{selectedRequest?.user?.name}</Typography> scheduled from <Typography component="span" fontWeight={700}>{formatLuxonDate(selectedRequest?.start_date)}</Typography> to <Typography component="span" fontWeight={700}>{formatLuxonDate(selectedRequest?.end_date)}</Typography>. Please provide a justification.
+          </DialogContentText>
+          
+          {rejectError && <Alert severity="error" sx={{ mb: 2, borderRadius: '10px' }}>{rejectError}</Alert>}
+          
+          <TextField
+            autoFocus
+            fullWidth
+            label="Reason for Rejection"
+            variant="outlined"
+            multiline
+            rows={4}
+            value={rejectionReason}
+            onChange={(e) => { setRejectionReason(e.target.value); if (e.target.value.trim()) setRejectError(""); }}
+            error={!!rejectError}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "14px",
+                backgroundColor: isDark ? alpha(safeColors.primary.main, 0.4) : '#fff',
+              }
+            }}
+          />
+        </DialogContent>
+        
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={handleDialogClose} sx={{ color: safeColors.grey[300], fontWeight: 600, textTransform: 'none', px: 2 }}>
+            Cancel
+          </Button>
+          <Button onClick={handleRejectConfirm} variant="contained" sx={{ backgroundColor: safeColors.redAccent.main, '&:hover': { backgroundColor: safeColors.redAccent.dark }, borderRadius: '10px', fontWeight: 700, textTransform: 'none', px: 3, boxShadow: 'none' }}>
+            Confirm Rejection
+          </Button>
+        </DialogActions>
       </Dialog>
 
-      {/* --- Success Snackbar --- */}
+      {/* ===== SUCCESS SNACKBAR ===== */}
       <Snackbar open={!!success} autoHideDuration={4000} onClose={() => setSuccess("")} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-          <Alert onClose={() => setSuccess("")} severity="success" variant="filled" sx={{ width: '100%' }}>
-            {success}
-          </Alert>
+        <Alert onClose={() => setSuccess("")} severity="success" variant="filled" sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
+          {success}
+        </Alert>
       </Snackbar>
 
     </Box>
