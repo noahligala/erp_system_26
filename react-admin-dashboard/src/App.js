@@ -65,6 +65,7 @@ import ArchivedReportViewer from "./scenes/accounting/reports/ArchivedReportView
 import StockAdjustment from "./scenes/accounting/inventory/StockAdjustment";
 import CashFlowStatement from "./scenes/accounting/reports/CashFlowStatement";
 import Budget from "./scenes/accounting/reports/Budget.";
+import UserProfileView from "./scenes/user/UserProfileView";
 
 // --- NEW IMPORTS: Public Careers Pages ---
 // Adjust these import paths based on where you saved the files
@@ -271,13 +272,16 @@ function App() {
 
                 {/* Others */}
                 <Route path="/contacts" element={<Contacts />} />
-                <Route path="/form" element={<Form />} />
+                {/* <Route path="/form" element={<Form />} /> */}
                 <Route path="/bar" element={<Bar />} />
                 <Route path="/pie" element={<Pie />} />
                 <Route path="/line" element={<Line />} />
                 <Route path="/faq" element={<FAQ />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/geography" element={<Geography />} />
+
+                {/* User Paths */}
+                <Route path="/user/profile" element={<UserProfileView />} />
 
                 {/* Fallback for authenticated users */}
                 <Route path="*" element={<Navigate to="/" replace />} />

@@ -12,6 +12,7 @@ import {
   useTheme,
   Alert,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import {
   Edit as EditIcon,
   Delete as DeleteIcon,
@@ -26,11 +27,9 @@ import { DataGrid, GridToolbar } from "@mui/x-data-grid";
 import { useNavigate } from "react-router-dom";
 import Header from "../../../components/Header.jsx";
 import { apiClient } from "../../../api/apiClient.js";
-import { tokens } from "../../../theme";
 
 const JobOpeningsList = () => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
   const navigate = useNavigate();
 
   const [openings, setOpenings] = useState([]);
@@ -94,14 +93,9 @@ const JobOpeningsList = () => {
 
   const statCardSx = {
     p: 2.2,
-    borderRadius: "18px",
-    border: `1px solid ${theme.palette.mode === "dark" ? colors.grey[700] : colors.grey[800]}`,
-    backgroundColor:
-      theme.palette.mode === "dark" ? colors.primary[400] : colors.primary[100],
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 10px 22px rgba(0,0,0,0.18)"
-        : "0 10px 22px rgba(15,23,42,0.06)",
+    borderRadius: "16px",
+    border: `1px solid ${theme.palette.divider}`,
+    backgroundColor: theme.palette.background.paper,
     height: "100%",
   };
 
@@ -118,7 +112,7 @@ const JobOpeningsList = () => {
       minWidth: 220,
       renderCell: (params) => (
         <Box sx={{ py: 1 }}>
-          <Typography sx={{ fontWeight: 700, color: colors.grey[100] }}>
+          <Typography sx={{ fontWeight: 500, color: theme.palette.text.primary }}>
             {params.value || "N/A"}
           </Typography>
         </Box>
@@ -162,23 +156,24 @@ const JobOpeningsList = () => {
       width: 140,
       renderCell: (params) => {
         const value = params.value;
+        
+        // Lightweight translucent semantic mapping
         const sxMap = {
           draft: {
-            backgroundColor:
-              theme.palette.mode === "dark" ? colors.grey[700] : colors.grey[800],
-            color: colors.grey[100],
+            backgroundColor: alpha(theme.palette.text.secondary, 0.1),
+            color: theme.palette.text.secondary,
           },
           open: {
-            backgroundColor: colors.greenAccent[500],
-            color: theme.palette.mode === "dark" ? colors.primary[900] : "#fff",
+            backgroundColor: alpha(theme.palette.success.main, 0.12),
+            color: theme.palette.success.main,
           },
           on_hold: {
-            backgroundColor: colors.yellowAccent[500],
-            color: colors.primary[900],
+            backgroundColor: alpha(theme.palette.warning.main, 0.12),
+            color: theme.palette.warning.main,
           },
           closed: {
-            backgroundColor: colors.redAccent[500],
-            color: "#fff",
+            backgroundColor: alpha(theme.palette.error.main, 0.12),
+            color: theme.palette.error.main,
           },
         };
 
@@ -187,8 +182,8 @@ const JobOpeningsList = () => {
             label={value ? value.replace("_", " ").toUpperCase() : "N/A"}
             size="small"
             sx={{
-              fontWeight: 800,
-              borderRadius: "999px",
+              fontWeight: 500,
+              borderRadius: "6px",
               ...sxMap[value],
             }}
           />
@@ -226,16 +221,10 @@ const JobOpeningsList = () => {
               size="small"
               onClick={() => handleEdit(params.row.id)}
               sx={{
-                color: colors.blueAccent[500],
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(104,112,250,0.10)"
-                    : "rgba(104,112,250,0.10)",
+                color: theme.palette.primary.main,
+                backgroundColor: alpha(theme.palette.primary.main, 0.08),
                 "&:hover": {
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(104,112,250,0.18)"
-                      : "rgba(104,112,250,0.18)",
+                  backgroundColor: alpha(theme.palette.primary.main, 0.15),
                 },
               }}
             >
@@ -248,16 +237,10 @@ const JobOpeningsList = () => {
               size="small"
               onClick={() => handleDelete(params.row.id)}
               sx={{
-                color: colors.redAccent[500],
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(219,79,74,0.10)"
-                    : "rgba(219,79,74,0.10)",
+                color: theme.palette.error.main,
+                backgroundColor: alpha(theme.palette.error.main, 0.08),
                 "&:hover": {
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(219,79,74,0.18)"
-                      : "rgba(219,79,74,0.18)",
+                  backgroundColor: alpha(theme.palette.error.main, 0.15),
                 },
               }}
             >
@@ -271,16 +254,15 @@ const JobOpeningsList = () => {
 
   return (
     <Box m={{ xs: "12px", md: "20px" }}>
+      {/* Banner */}
       <Paper
         elevation={0}
         sx={{
           mb: 3,
           p: { xs: 2, md: 3 },
-          borderRadius: "20px",
-          background:
-            theme.palette.mode === "dark"
-              ? `linear-gradient(135deg, ${colors.primary[400]} 0%, ${colors.primary[500]} 100%)`
-              : `linear-gradient(135deg, ${colors.blueAccent[800]} 0%, ${colors.blueAccent[700]} 100%)`,
+          borderRadius: "16px",
+          // Modern vibrant gradient utilizing your new primary colors
+          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${alpha(theme.palette.primary.main, 0.8)} 100%)`,
           color: "#fff",
           position: "relative",
           overflow: "hidden",
@@ -290,12 +272,12 @@ const JobOpeningsList = () => {
           sx={{
             position: "absolute",
             inset: 0,
-            opacity: 0.08,
+            opacity: 0.1,
             backgroundImage:
               "radial-gradient(circle at 20% 20%, white 0, transparent 22%), radial-gradient(circle at 80% 30%, white 0, transparent 18%)",
           }}
         />
-        <Box sx={{ position: "relative", zIndex: 1 }}>
+        <Box sx={{ position: "relative", zIndex: 1, "& .MuiTypography-root": { color: "#fff" } }}>
           <Header
             title="JOB OPENINGS"
             subtitle="Manage, review, edit, and track all recruitment openings"
@@ -315,15 +297,10 @@ const JobOpeningsList = () => {
                 startIcon={<AddIcon />}
                 onClick={() => navigate("/recruitment/job-openings/new-opening")}
                 sx={{
-                  borderRadius: "12px",
-                  px: 2.5,
-                  py: 1.1,
-                  fontWeight: 800,
-                  textTransform: "none",
-                  backgroundColor: colors.greenAccent[500],
-                  color: theme.palette.mode === "dark" ? colors.primary[900] : "#fff",
+                  backgroundColor: theme.palette.success.main,
+                  color: "#fff",
                   "&:hover": {
-                    backgroundColor: colors.greenAccent[600],
+                    backgroundColor: theme.palette.success.dark || theme.palette.success.main,
                   },
                 }}
               >
@@ -332,21 +309,16 @@ const JobOpeningsList = () => {
 
               <Button
                 variant="outlined"
-                startIcon={refreshing ? <CircularProgress size={18} /> : <RefreshIcon />}
+                startIcon={refreshing ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />}
                 onClick={fetchOpenings}
                 disabled={refreshing}
                 sx={{
-                  borderRadius: "12px",
-                  px: 2.2,
-                  py: 1.1,
-                  fontWeight: 700,
-                  textTransform: "none",
                   color: "#fff",
-                  borderColor: "rgba(255,255,255,0.22)",
+                  borderColor: "rgba(255,255,255,0.3)",
                   backgroundColor: "rgba(255,255,255,0.08)",
                   "&:hover": {
-                    borderColor: "rgba(255,255,255,0.32)",
-                    backgroundColor: "rgba(255,255,255,0.14)",
+                    borderColor: "rgba(255,255,255,0.5)",
+                    backgroundColor: "rgba(255,255,255,0.15)",
                   },
                 }}
               >
@@ -354,7 +326,7 @@ const JobOpeningsList = () => {
               </Button>
             </Stack>
 
-            <Typography sx={{ color: "rgba(255,255,255,0.88)", fontWeight: 600 }}>
+            <Typography sx={{ color: "rgba(255,255,255,0.9)", fontWeight: 500 }}>
               Total openings: {stats.total}
             </Typography>
           </Box>
@@ -362,11 +334,12 @@ const JobOpeningsList = () => {
       </Paper>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3, borderRadius: 3 }}>
+        <Alert severity="error" sx={{ mb: 3, borderRadius: "12px" }}>
           {error}
         </Alert>
       )}
 
+      {/* Stats Grid */}
       <Box
         sx={{
           display: "grid",
@@ -381,11 +354,11 @@ const JobOpeningsList = () => {
       >
         <Paper elevation={0} sx={statCardSx}>
           <Stack spacing={1}>
-            <WorkOutlineIcon sx={{ color: colors.blueAccent[500] }} />
-            <Typography variant="body2" sx={{ color: colors.grey[400], fontWeight: 700 }}>
+            <WorkOutlineIcon sx={{ color: theme.palette.primary.main }} />
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, fontWeight: 500 }}>
               Total Openings
             </Typography>
-            <Typography variant="h4" sx={{ color: colors.grey[100], fontWeight: 800 }}>
+            <Typography variant="h4" sx={{ color: theme.palette.text.primary, fontWeight: 600 }}>
               {stats.total}
             </Typography>
           </Stack>
@@ -393,11 +366,11 @@ const JobOpeningsList = () => {
 
         <Paper elevation={0} sx={statCardSx}>
           <Stack spacing={1}>
-            <CheckCircleOutlineIcon sx={{ color: colors.greenAccent[500] }} />
-            <Typography variant="body2" sx={{ color: colors.grey[400], fontWeight: 700 }}>
+            <CheckCircleOutlineIcon sx={{ color: theme.palette.success.main }} />
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, fontWeight: 500 }}>
               Open
             </Typography>
-            <Typography variant="h4" sx={{ color: colors.grey[100], fontWeight: 800 }}>
+            <Typography variant="h4" sx={{ color: theme.palette.text.primary, fontWeight: 600 }}>
               {stats.open}
             </Typography>
           </Stack>
@@ -405,11 +378,11 @@ const JobOpeningsList = () => {
 
         <Paper elevation={0} sx={statCardSx}>
           <Stack spacing={1}>
-            <PauseCircleOutlineIcon sx={{ color: colors.yellowAccent[500] }} />
-            <Typography variant="body2" sx={{ color: colors.grey[400], fontWeight: 700 }}>
+            <PauseCircleOutlineIcon sx={{ color: theme.palette.warning.main }} />
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, fontWeight: 500 }}>
               On Hold
             </Typography>
-            <Typography variant="h4" sx={{ color: colors.grey[100], fontWeight: 800 }}>
+            <Typography variant="h4" sx={{ color: theme.palette.text.primary, fontWeight: 600 }}>
               {stats.onHold + stats.draft}
             </Typography>
           </Stack>
@@ -417,31 +390,25 @@ const JobOpeningsList = () => {
 
         <Paper elevation={0} sx={statCardSx}>
           <Stack spacing={1}>
-            <ArchiveOutlinedIcon sx={{ color: colors.redAccent[500] }} />
-            <Typography variant="body2" sx={{ color: colors.grey[400], fontWeight: 700 }}>
+            <ArchiveOutlinedIcon sx={{ color: theme.palette.error.main }} />
+            <Typography variant="body2" sx={{ color: theme.palette.text.secondary, fontWeight: 500 }}>
               Closed
             </Typography>
-            <Typography variant="h4" sx={{ color: colors.grey[100], fontWeight: 800 }}>
+            <Typography variant="h4" sx={{ color: theme.palette.text.primary, fontWeight: 600 }}>
               {stats.closed}
             </Typography>
           </Stack>
         </Paper>
       </Box>
 
+      {/* DataGrid */}
       <Paper
         elevation={0}
         sx={{
-          p: 1.5,
-          borderRadius: "20px",
-          backgroundColor:
-            theme.palette.mode === "dark" ? colors.primary[400] : colors.primary[100],
-          border: `1px solid ${
-            theme.palette.mode === "dark" ? colors.grey[700] : colors.grey[800]
-          }`,
-          boxShadow:
-            theme.palette.mode === "dark"
-              ? "0 10px 24px rgba(0,0,0,0.18)"
-              : "0 10px 24px rgba(15,23,42,0.06)",
+          p: { xs: 1, sm: 2 },
+          borderRadius: "16px",
+          backgroundColor: theme.palette.background.paper,
+          border: `1px solid ${theme.palette.divider}`,
         }}
       >
         <Box
@@ -449,42 +416,23 @@ const JobOpeningsList = () => {
           sx={{
             "& .MuiDataGrid-root": {
               border: "none",
-              fontSize: "0.92rem",
-              color: colors.grey[100],
             },
             "& .MuiDataGrid-columnHeaders": {
-              borderBottom: "none",
-              backgroundColor:
-                theme.palette.mode === "dark" ? colors.primary[500] : colors.primary[200],
-              borderRadius: "14px 14px 0 0",
+              borderBottom: `1px solid ${theme.palette.divider}`,
+              backgroundColor: alpha(theme.palette.background.default, 0.4), // Very subtle contrast
             },
             "& .MuiDataGrid-columnHeaderTitle": {
-              fontWeight: 800,
+              fontWeight: 600,
             },
             "& .MuiDataGrid-cell": {
-              borderBottom: `1px solid ${
-                theme.palette.mode === "dark" ? colors.grey[700] : colors.grey[800]
-              }`,
-              display: "flex",
-              alignItems: "center",
+              borderBottom: `1px solid ${theme.palette.divider}`,
             },
             "& .MuiDataGrid-row:hover": {
-              backgroundColor:
-                theme.palette.mode === "dark"
-                  ? "rgba(255,255,255,0.03)"
-                  : "rgba(15,23,42,0.03)",
-            },
-            "& .MuiDataGrid-toolbarContainer": {
-              padding: "8px 8px 12px 8px",
-              gap: "8px",
-            },
-            "& .MuiButton-text": {
-              color: colors.grey[300],
+              backgroundColor: theme.palette.action.hover,
             },
             "& .MuiDataGrid-footerContainer": {
-              borderTop: "none",
-              backgroundColor:
-                theme.palette.mode === "dark" ? colors.primary[500] : colors.primary[200],
+              borderTop: `1px solid ${theme.palette.divider}`,
+              backgroundColor: "transparent",
             },
           }}
         >

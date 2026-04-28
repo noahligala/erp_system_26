@@ -433,7 +433,8 @@ export const mockPieData = [
 export const mockLineData = [
   {
     id: "japan",
-    color: tokens("dark").greenAccent[500],
+    // Swapped to our new semantic status success token
+    color: tokens("dark").status.success,
     data: [
       {
         x: "plane",
@@ -487,7 +488,8 @@ export const mockLineData = [
   },
   {
     id: "france",
-    color: tokens("dark").blueAccent[300],
+    // Swapped to our new semantic status info token
+    color: tokens("dark").status.info,
     data: [
       {
         x: "plane",
@@ -541,7 +543,8 @@ export const mockLineData = [
   },
   {
     id: "us",
-    color: tokens("dark").redAccent[200],
+    // Swapped to our new semantic status error token
+    color: tokens("dark").status.error,
     data: [
       {
         x: "plane",

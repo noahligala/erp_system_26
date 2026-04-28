@@ -10,8 +10,12 @@ import {
   Paper,
   FormControlLabel,
   Checkbox,
+  Divider,
+  InputAdornment,
+  IconButton,
 } from "@mui/material";
-import { tokens } from "../../theme";
+import { alpha } from "@mui/material/styles";
+import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { Formik } from "formik";
 import * as yup from "yup";
 import { Link, useNavigate, useLocation } from "react-router-dom";
@@ -22,12 +26,12 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
   const { login } = useAuth();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
 
   const lastVisitedPath = secureStore.get("lastVisitedPath");
 
@@ -46,25 +50,23 @@ const Login = () => {
       const response = await login(values, rememberMe);
 
       if (response.success) {
-        const redirectTo = secureStore.get("lastVisitedPath") || "/dashboard";
+        const redirectTo =
+          secureStore.get("lastVisitedPath") || "/dashboard";
         secureStore.remove("lastVisitedPath");
         navigate(redirectTo, { replace: true });
       } else {
-        setError(response.error || "Invalid email or password.");
+        setError(response.error || "Invalid credentials.");
       }
     } catch (err) {
-      console.error("Login error:", err);
-      setError(err.message || "A network or server error occurred.");
+      setError(err.message || "Server error occurred.");
     } finally {
       setLoading(false);
     }
   };
 
-  const initialValues = { email: "", password: "" };
-
-  const validationSchema = yup.object().shape({
-    email: yup.string().email("Invalid email address").required("Required"),
-    password: yup.string().min(6, "At least 6 characters").required("Required"),
+  const validationSchema = yup.object({
+    email: yup.string().email("Invalid email").required("Required"),
+    password: yup.string().min(6).required("Required"),
   });
 
   return (
@@ -72,41 +74,39 @@ const Login = () => {
       display="flex"
       justifyContent="center"
       alignItems="center"
-      height="100vh"
-      sx={{
-        background: `linear-gradient(135deg, ${colors.primary[400]}, ${colors.primary[600]})`,
-      }}
+      minHeight="100vh"
+      sx={{ px: 2 }}
     >
       <Paper
-        elevation={6}
         sx={{
-          width: "400px",
-          p: 5,
-          borderRadius: "16px",
-          backgroundColor: colors.primary[500],
-          boxShadow: "0px 6px 25px rgba(0,0,0,0.35)",
+          width: 380,
+          p: 4,
+          borderRadius: "18px",
+          backdropFilter: "blur(16px)",
+          background: alpha(theme.palette.background.paper, 0.7),
+          border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
+          boxShadow:
+            theme.palette.mode === "dark"
+              ? "0 20px 60px rgba(0,0,0,0.6)"
+              : "0 20px 60px rgba(0,0,0,0.08)",
         }}
       >
-        <Typography
-          variant="h3"
-          textAlign="center"
-          fontWeight="bold"
-          mb={3}
-          color={colors.greenAccent[500]}
-        >
-          Sign In
-        </Typography>
+        {/* Header */}
+        <Box mb={3}>
+          <Typography variant="h4" fontWeight={600}>
+            Welcome back
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Sign in to continue
+          </Typography>
+        </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: "8px" }}>
-            {error}
-          </Alert>
-        )}
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         <Formik
-          onSubmit={handleFormSubmit}
-          initialValues={initialValues}
+          initialValues={{ email: "", password: "" }}
           validationSchema={validationSchema}
+          onSubmit={handleFormSubmit}
         >
           {({
             values,
@@ -117,129 +117,115 @@ const Login = () => {
             handleSubmit,
           }) => (
             <form onSubmit={handleSubmit} noValidate>
+              {/* EMAIL */}
               <TextField
                 fullWidth
-                variant="filled"
-                type="email"
-                label="Email Address"
-                onBlur={handleBlur}
-                onChange={handleChange}
-                value={values.email}
+                size="small"
+                label="Email"
                 name="email"
-                autoComplete="email"
+                value={values.email}
+                onChange={handleChange}
+                onBlur={handleBlur}
                 autoFocus
+                autoComplete="email"
                 error={!!touched.email && !!errors.email}
                 helperText={touched.email && errors.email}
-                sx={{
-                  mb: 3,
-                  "& .MuiInputBase-input:-webkit-autofill": {
-                    WebkitBoxShadow: `0 0 0 100px ${colors.primary[500]} inset`,
-                    WebkitTextFillColor: colors.grey[100],
-                  },
-                }}
+                sx={inputStyles(theme)}
               />
 
+              {/* PASSWORD */}
               <TextField
                 fullWidth
-                variant="filled"
-                type="password"
+                size="small"
                 label="Password"
-                onBlur={handleBlur}
-                onChange={handleChange}
-                value={values.password}
+                type={showPassword ? "text" : "password"}
                 name="password"
+                value={values.password}
+                onChange={handleChange}
+                onBlur={handleBlur}
                 autoComplete="current-password"
                 error={!!touched.password && !!errors.password}
                 helperText={touched.password && errors.password}
-                sx={{
-                  mb: 2,
-                  "& .MuiInputBase-input:-webkit-autofill": {
-                    WebkitBoxShadow: `0 0 0 100px ${colors.primary[500]} inset`,
-                    WebkitTextFillColor: colors.grey[100],
-                  },
+                sx={inputStyles(theme)}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() =>
+                          setShowPassword((prev) => !prev)
+                        }
+                        edge="end"
+                      >
+                        {showPassword ? (
+                          <VisibilityOff fontSize="small" />
+                        ) : (
+                          <Visibility fontSize="small" />
+                        )}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
                 }}
               />
 
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    color="secondary"
-                  />
-                }
-                label="Remember Me"
-                sx={{ mb: 2, color: colors.grey[100] }}
-              />
+              {/* OPTIONS */}
+              <Box display="flex" justifyContent="space-between" mb={2}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={rememberMe}
+                      onChange={(e) =>
+                        setRememberMe(e.target.checked)
+                      }
+                      size="small"
+                    />
+                  }
+                  label={<Typography variant="body2">Remember</Typography>}
+                />
 
+                <Link
+                  to="/forgot-password"
+                  style={{
+                    fontSize: "0.8rem",
+                    color: theme.palette.primary.main,
+                    textDecoration: "none",
+                  }}
+                >
+                  Forgot?
+                </Link>
+              </Box>
+
+              {/* BUTTON */}
               <Button
                 fullWidth
                 type="submit"
                 variant="contained"
-                color="secondary"
                 disabled={loading}
                 sx={{
-                  mt: 1,
-                  py: 1.3,
-                  fontWeight: "bold",
+                  py: 1.2,
                   borderRadius: "10px",
-                  textTransform: "none",
-                  fontSize: "1rem",
-                  transition: "all 0.25s ease",
-                  "&:hover": {
-                    transform: "scale(1.02)",
-                  },
+                  fontWeight: 600,
                 }}
               >
                 {loading ? (
-                  <>
-                    <CircularProgress
-                      size={22}
-                      color="inherit"
-                      sx={{ mr: 1 }}
-                    />
-                    Signing In...
-                  </>
+                  <CircularProgress size={20} color="inherit" />
                 ) : (
                   "Sign In"
                 )}
               </Button>
 
-              <Typography
-                variant="body2"
-                textAlign="center"
-                mt={3}
-                color={colors.grey[300]}
-              >
+              <Divider sx={{ my: 3 }} />
+
+              <Typography variant="body2" textAlign="center">
                 Don’t have an account?{" "}
                 <Link
                   to="/register"
                   style={{
-                    color: colors.greenAccent[400],
+                    color: theme.palette.primary.main,
+                    fontWeight: 500,
                     textDecoration: "none",
-                    fontWeight: "bold",
                   }}
                 >
-                  Register
-                </Link>
-              </Typography>
-
-              <Typography
-                variant="body2"
-                textAlign="center"
-                mt={1.5}
-                color={colors.grey[400]}
-              >
-                Forgot your password?{" "}
-                <Link
-                  to="/forgot-password"
-                  style={{
-                    color: colors.greenAccent[400],
-                    textDecoration: "none",
-                    fontWeight: "bold",
-                  }}
-                >
-                  Reset
+                  Create one
                 </Link>
               </Typography>
             </form>
@@ -251,3 +237,40 @@ const Login = () => {
 };
 
 export default Login;
+
+/* 🔥 INPUT STYLE FIX */
+const inputStyles = (theme) => ({
+  mb: 2.5,
+  "& .MuiOutlinedInput-root": {
+    borderRadius: "10px",
+    background: alpha(theme.palette.background.paper, 0.5),
+    backdropFilter: "blur(6px)",
+
+    "& fieldset": {
+      borderColor: alpha(theme.palette.divider, 0.25),
+    },
+
+    "&:hover fieldset": {
+      borderColor: alpha(theme.palette.primary.main, 0.4),
+    },
+
+    "&.Mui-focused fieldset": {
+      borderColor: theme.palette.primary.main,
+      borderWidth: "1px", // removes thick blue outline
+    },
+  },
+
+  "& .MuiInputLabel-root": {
+    fontSize: "0.85rem",
+  },
+
+  /* 🚫 Kill ugly autofill blue */
+  "& input:-webkit-autofill": {
+    WebkitBoxShadow: `0 0 0 100px ${alpha(
+      theme.palette.background.paper,
+      0.7
+    )} inset !important`,
+    WebkitTextFillColor: theme.palette.text.primary,
+    transition: "background-color 9999s ease-in-out 0s",
+  },
+});

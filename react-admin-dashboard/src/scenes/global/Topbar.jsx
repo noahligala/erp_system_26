@@ -35,7 +35,7 @@ const buildSearchIndex = (employees = []) => {
     { label: "Applicants", path: "/recruitment/applicants", type: "Module", keywords: ["applicants", "candidates", "recruitment"] },
     { label: "Contacts", path: "/contacts", type: "Page", keywords: ["contacts", "directory"] },
     { label: "Invoices", path: "/invoices", type: "Page", keywords: ["invoices", "billing", "finance"] },
-    { label: "Profile Form", path: "/form", type: "Page", keywords: ["form", "user", "profile"] },
+    { label: "Profile Form", path: "/user/profile", type: "Page", keywords: [ "user", "profile"] },
     { label: "Calendar", path: "/calendar", type: "Page", keywords: ["calendar", "events", "schedule"] },
     { label: "FAQ", path: "/faq", type: "Page", keywords: ["faq", "help", "questions"] },
     // Add other routes...
@@ -315,7 +315,7 @@ const Topbar = ({ setIsSidebar }) => {
         }}
       >
         {/* Update path to your actual profile form route */}
-        <MenuItem onClick={() => { handleUserClose(); navigate("/form"); }}>Profile</MenuItem>
+        <MenuItem onClick={() => { handleUserClose(); navigate("/user/profile"); }}>Profile</MenuItem>
         <MenuItem onClick={handleSettings}>Settings</MenuItem>
         {/* Use LogoutButton if it's just a styled button, or call handleLogout */}
         <MenuItem onClick={handleLogout}>

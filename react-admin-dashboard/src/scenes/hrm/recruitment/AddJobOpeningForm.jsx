@@ -17,19 +17,20 @@ import {
   Paper,
   FormHelperText,
   IconButton,
-  Divider,
   Stack,
   Chip,
   InputAdornment,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { AdapterLuxon } from "@mui/x-date-pickers/AdapterLuxon";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { DateTime } from "luxon";
 import { Formik, Field, FieldArray } from "formik";
 import * as yup from "yup";
 import Header from "../../../components/Header";
-import { tokens } from "../../../theme";
 import { useAuth } from "../../../api/AuthProvider";
+
+// Icons
 import ArrowBackOutlinedIcon from "@mui/icons-material/ArrowBackOutlined";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import RemoveCircleOutlineIcon from "@mui/icons-material/RemoveCircleOutline";
@@ -44,7 +45,6 @@ import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 
 const AddJobOpeningForm = () => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
   const navigate = useNavigate();
   const { apiClient, isAuthenticated } = useAuth();
 
@@ -204,18 +204,12 @@ const AddJobOpeningForm = () => {
   const sectionPaperSx = {
     p: { xs: 2, md: 3 },
     borderRadius: "18px",
-    backgroundColor:
-      theme.palette.mode === "dark" ? colors.primary[400] : colors.primary[100],
-    border: `1px solid ${
-      theme.palette.mode === "dark" ? colors.grey[700] : colors.grey[800]
-    }`,
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 10px 24px rgba(0,0,0,0.22)"
-        : "0 10px 24px rgba(15,23,42,0.06)",
+    backgroundColor: theme.palette.background.paper,
+    border: `1px solid ${theme.palette.divider}`,
+    height: "100%",
   };
 
-  const sectionTitle = (icon, title, subtitle) => (
+  const sectionTitle = (icon, title, subtitle, iconColorMain, iconColorBg) => (
     <Stack spacing={0.5} mb={2.5}>
       <Stack direction="row" spacing={1.2} alignItems="center">
         <Box
@@ -225,11 +219,8 @@ const AddJobOpeningForm = () => {
             borderRadius: "12px",
             display: "grid",
             placeItems: "center",
-            backgroundColor:
-              theme.palette.mode === "dark"
-                ? "rgba(76, 206, 172, 0.12)"
-                : "rgba(35, 168, 37, 0.12)",
-            color: colors.greenAccent[500],
+            backgroundColor: iconColorBg || alpha(theme.palette.primary.main, 0.12),
+            color: iconColorMain || theme.palette.primary.main,
           }}
         >
           {icon}
@@ -237,8 +228,8 @@ const AddJobOpeningForm = () => {
         <Typography
           variant="h5"
           sx={{
-            fontWeight: 800,
-            color: colors.grey[100],
+            fontWeight: 600,
+            color: theme.palette.text.primary,
           }}
         >
           {title}
@@ -247,8 +238,7 @@ const AddJobOpeningForm = () => {
       <Typography
         variant="body2"
         sx={{
-          color:
-            theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
+          color: theme.palette.text.secondary,
         }}
       >
         {subtitle}
@@ -257,8 +247,8 @@ const AddJobOpeningForm = () => {
   );
 
   const softFieldSx = {
-    "& .MuiFilledInput-root": {
-      borderRadius: "12px",
+    "& .MuiOutlinedInput-root": {
+      borderRadius: "10px",
     },
     "& .MuiFormHelperText-root": {
       ml: 0,
@@ -277,13 +267,8 @@ const AddJobOpeningForm = () => {
         flexDirection="column"
         gap={2}
       >
-        <CircularProgress color="secondary" />
-        <Typography
-          sx={{
-            color:
-              theme.palette.mode === "dark" ? colors.grey[200] : colors.grey[400],
-          }}
-        >
+        <CircularProgress color="primary" />
+        <Typography sx={{ color: theme.palette.text.secondary }}>
           Loading form data...
         </Typography>
       </Box>
@@ -293,16 +278,14 @@ const AddJobOpeningForm = () => {
   return (
     <LocalizationProvider dateAdapter={AdapterLuxon}>
       <Box m={{ xs: "10px", md: "20px" }} sx={{ pb: 3 }}>
+        {/* Header Banner */}
         <Paper
           elevation={0}
           sx={{
             mb: 3,
             p: { xs: 2, md: 3 },
             borderRadius: "20px",
-            background:
-              theme.palette.mode === "dark"
-                ? `linear-gradient(135deg, ${colors.primary[400]} 0%, ${colors.primary[500]} 100%)`
-                : `linear-gradient(135deg, ${colors.blueAccent[800]} 0%, ${colors.blueAccent[700]} 100%)`,
+            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${alpha(theme.palette.primary.main, 0.8)} 100%)`,
             color: "#fff",
             overflow: "hidden",
             position: "relative",
@@ -312,12 +295,12 @@ const AddJobOpeningForm = () => {
             sx={{
               position: "absolute",
               inset: 0,
-              opacity: 0.08,
+              opacity: 0.1,
               backgroundImage:
                 "radial-gradient(circle at 20% 20%, white 0, transparent 22%), radial-gradient(circle at 80% 30%, white 0, transparent 18%)",
             }}
           />
-          <Box sx={{ position: "relative", zIndex: 1 }}>
+          <Box sx={{ position: "relative", zIndex: 1, "& .MuiTypography-root": { color: "#fff" } }}>
             <Stack
               direction={{ xs: "column", md: "row" }}
               justifyContent="space-between"
@@ -341,7 +324,7 @@ const AddJobOpeningForm = () => {
                     sx={{
                       backgroundColor: "rgba(255,255,255,0.14)",
                       color: "#fff",
-                      fontWeight: 700,
+                      fontWeight: 600,
                     }}
                   />
                   <Chip
@@ -349,7 +332,7 @@ const AddJobOpeningForm = () => {
                     sx={{
                       backgroundColor: "rgba(255,255,255,0.14)",
                       color: "#fff",
-                      fontWeight: 700,
+                      fontWeight: 600,
                     }}
                   />
                 </Stack>
@@ -361,15 +344,16 @@ const AddJobOpeningForm = () => {
                 variant="outlined"
                 sx={{
                   color: "#fff",
-                  borderColor: "rgba(255,255,255,0.25)",
+                  borderColor: "rgba(255,255,255,0.3)",
                   backgroundColor: "rgba(255,255,255,0.08)",
                   borderRadius: "12px",
                   px: 2,
                   py: 1,
                   textTransform: "none",
-                  fontWeight: 700,
+                  fontWeight: 600,
                   "&:hover": {
-                    backgroundColor: "rgba(255,255,255,0.14)",
+                    backgroundColor: "rgba(255,255,255,0.15)",
+                    borderColor: "rgba(255,255,255,0.5)",
                   },
                 }}
               >
@@ -380,33 +364,10 @@ const AddJobOpeningForm = () => {
         </Paper>
 
         {error && !success && (
-          <Alert severity="error" sx={{ mb: 3, borderRadius: 3 }}>
+          <Alert severity="error" sx={{ mb: 3, borderRadius: "12px" }}>
             {error}
           </Alert>
         )}
-
-        <Paper
-          elevation={0}
-          sx={{
-            mb: 3,
-            p: 2,
-            borderRadius: "18px",
-            backgroundColor:
-              theme.palette.mode === "dark" ? colors.primary[400] : colors.primary[100],
-            border: `1px solid ${
-              theme.palette.mode === "dark" ? colors.grey[700] : colors.grey[800]
-            }`,
-          }}
-        >
-          <Stack spacing={0.8}>
-            <Typography variant="body2" sx={{ color: colors.grey[100], fontWeight: 700 }}>
-              What will be submitted
-            </Typography>
-            <Typography variant="caption" sx={{ color: colors.grey[400] }}>
-              Title, department, internal role, status, location, employment type, overview, formatted requirements, formatted benefits, positions, posted date, and closing date.
-            </Typography>
-          </Stack>
-        </Paper>
 
         <Formik
           initialValues={initialValues}
@@ -430,14 +391,16 @@ const AddJobOpeningForm = () => {
                     {sectionTitle(
                       <WorkOutlineOutlinedIcon fontSize="small" />,
                       "Basic Information",
-                      "Set the title and publication status for the vacancy"
+                      "Set the title and publication status for the vacancy",
+                      theme.palette.primary.main,
+                      alpha(theme.palette.primary.main, 0.12)
                     )}
 
                     <Grid container spacing={2.5}>
                       <Grid item xs={12} md={8}>
                         <TextField
                           fullWidth
-                          variant="filled"
+                          variant="outlined"
                           label="Job Title *"
                           name="title"
                           value={values.title}
@@ -460,7 +423,7 @@ const AddJobOpeningForm = () => {
                       <Grid item xs={12} md={4}>
                         <FormControl
                           fullWidth
-                          variant="filled"
+                          variant="outlined"
                           error={!!touched.status && !!errors.status}
                           sx={softFieldSx}
                         >
@@ -471,6 +434,7 @@ const AddJobOpeningForm = () => {
                             value={values.status}
                             onChange={handleChange}
                             onBlur={handleBlur}
+                            label="Status *"
                           >
                             <MenuItem value="draft">Draft</MenuItem>
                             <MenuItem value="open">Open</MenuItem>
@@ -492,18 +456,21 @@ const AddJobOpeningForm = () => {
                     {sectionTitle(
                       <BusinessOutlinedIcon fontSize="small" />,
                       "Organization & Role Setup",
-                      "Map the opening to the right department, internal role, location, and work type"
+                      "Map the opening to the right department, internal role, location, and work type",
+                      theme.palette.success.main,
+                      alpha(theme.palette.success.main, 0.12)
                     )}
 
                     <Grid container spacing={2.5}>
                       <Grid item xs={12} md={3}>
-                        <FormControl fullWidth variant="filled" sx={softFieldSx}>
+                        <FormControl fullWidth variant="outlined" sx={softFieldSx}>
                           <InputLabel>Department</InputLabel>
                           <Select
                             name="department_id"
                             value={values.department_id}
                             onChange={handleChange}
                             onBlur={handleBlur}
+                            label="Department"
                           >
                             <MenuItem value="">
                               <em>None</em>
@@ -518,13 +485,14 @@ const AddJobOpeningForm = () => {
                       </Grid>
 
                       <Grid item xs={12} md={3}>
-                        <FormControl fullWidth variant="filled" sx={softFieldSx}>
+                        <FormControl fullWidth variant="outlined" sx={softFieldSx}>
                           <InputLabel>Internal Role</InputLabel>
                           <Select
                             name="job_title_id"
                             value={values.job_title_id}
                             onChange={handleChange}
                             onBlur={handleBlur}
+                            label="Internal Role"
                           >
                             <MenuItem value="">
                               <em>None</em>
@@ -541,7 +509,7 @@ const AddJobOpeningForm = () => {
                       <Grid item xs={12} md={3}>
                         <TextField
                           fullWidth
-                          variant="filled"
+                          variant="outlined"
                           label="Location"
                           name="location"
                           placeholder="e.g. Nairobi, Remote, Hybrid"
@@ -560,13 +528,14 @@ const AddJobOpeningForm = () => {
                       </Grid>
 
                       <Grid item xs={12} md={3}>
-                        <FormControl fullWidth variant="filled" sx={softFieldSx}>
+                        <FormControl fullWidth variant="outlined" sx={softFieldSx}>
                           <InputLabel>Employment Type</InputLabel>
                           <Select
                             name="type"
                             value={values.type}
                             onChange={handleChange}
                             onBlur={handleBlur}
+                            label="Employment Type"
                           >
                             <MenuItem value="">
                               <em>None</em>
@@ -588,12 +557,14 @@ const AddJobOpeningForm = () => {
                     {sectionTitle(
                       <ChecklistOutlinedIcon fontSize="small" />,
                       "Job Overview",
-                      "Provide the main summary candidates should read first"
+                      "Provide the main summary candidates should read first",
+                      theme.palette.info.main,
+                      alpha(theme.palette.info.main, 0.12)
                     )}
 
                     <TextField
                       fullWidth
-                      variant="filled"
+                      variant="outlined"
                       label="General Overview"
                       name="description"
                       value={values.description}
@@ -609,93 +580,50 @@ const AddJobOpeningForm = () => {
 
                 {/* Requirements */}
                 <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ ...sectionPaperSx, height: "100%" }}>
+                  <Paper elevation={0} sx={sectionPaperSx}>
                     {sectionTitle(
                       <ChecklistOutlinedIcon fontSize="small" />,
                       "Requirements",
-                      "List the key qualifications, skills, and experience"
+                      "List the key qualifications, skills, and experience",
+                      theme.palette.warning.main,
+                      alpha(theme.palette.warning.main, 0.12)
                     )}
 
                     <FieldArray name="requirements">
                       {({ push, remove }) => (
                         <Stack spacing={1.5}>
                           {values.requirements.map((req, index) => (
-                            <Paper
-                              key={index}
-                              elevation={0}
-                              sx={{
-                                p: 1.25,
-                                borderRadius: "14px",
-                                backgroundColor:
-                                  theme.palette.mode === "dark"
-                                    ? colors.primary[500]
-                                    : colors.primary[200],
-                                border: `1px solid ${
-                                  theme.palette.mode === "dark"
-                                    ? colors.grey[700]
-                                    : colors.grey[800]
-                                }`,
-                              }}
-                            >
-                              <Stack direction="row" spacing={1.2} alignItems="flex-start">
-                                <Box
-                                  sx={{
-                                    minWidth: 32,
-                                    height: 32,
-                                    borderRadius: "10px",
-                                    display: "grid",
-                                    placeItems: "center",
-                                    backgroundColor:
-                                      theme.palette.mode === "dark"
-                                        ? "rgba(76, 206, 172, 0.12)"
-                                        : "rgba(35, 168, 37, 0.12)",
-                                    color: colors.greenAccent[500],
-                                    fontWeight: 800,
-                                    mt: 0.25,
-                                  }}
-                                >
-                                  {index + 1}
-                                </Box>
-
-                                <TextField
-                                  fullWidth
-                                  variant="outlined"
-                                  size="small"
-                                  placeholder={`Requirement ${index + 1}`}
-                                  name={`requirements[${index}]`}
-                                  value={req}
-                                  onChange={handleChange}
-                                  onBlur={handleBlur}
-                                  sx={{
-                                    "& .MuiOutlinedInput-root": {
-                                      borderRadius: "10px",
-                                    },
-                                  }}
-                                />
-
-                                <IconButton
-                                  color="error"
-                                  onClick={() => remove(index)}
-                                  disabled={values.requirements.length === 1}
-                                  sx={{ mt: 0.25 }}
-                                >
-                                  <RemoveCircleOutlineIcon />
-                                </IconButton>
-                              </Stack>
-                            </Paper>
+                            <Box key={index} display="flex" gap={1} alignItems="center">
+                              <TextField
+                                fullWidth
+                                variant="outlined"
+                                size="small"
+                                placeholder={`Requirement ${index + 1}`}
+                                name={`requirements[${index}]`}
+                                value={req}
+                                onChange={handleChange}
+                                onBlur={handleBlur}
+                                sx={softFieldSx}
+                              />
+                              <IconButton
+                                color="error"
+                                onClick={() => remove(index)}
+                                disabled={values.requirements.length === 1}
+                                sx={{ backgroundColor: alpha(theme.palette.error.main, 0.1) }}
+                              >
+                                <RemoveCircleOutlineIcon />
+                              </IconButton>
+                            </Box>
                           ))}
 
                           <Button
                             startIcon={<AddCircleOutlineIcon />}
                             onClick={() => push("")}
                             size="small"
-                            color="secondary"
+                            variant="text"
                             sx={{
-                              mt: 1,
                               alignSelf: "flex-start",
-                              textTransform: "none",
-                              fontWeight: 700,
-                              borderRadius: "10px",
+                              color: theme.palette.text.primary,
                             }}
                           >
                             Add Requirement
@@ -708,93 +636,50 @@ const AddJobOpeningForm = () => {
 
                 {/* Benefits */}
                 <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ ...sectionPaperSx, height: "100%" }}>
+                  <Paper elevation={0} sx={sectionPaperSx}>
                     {sectionTitle(
                       <CardGiftcardOutlinedIcon fontSize="small" />,
                       "Benefits",
-                      "List any optional benefits or role perks"
+                      "List any optional benefits or role perks",
+                      theme.palette.success.main,
+                      alpha(theme.palette.success.main, 0.12)
                     )}
 
                     <FieldArray name="benefits">
                       {({ push, remove }) => (
                         <Stack spacing={1.5}>
                           {values.benefits.map((ben, index) => (
-                            <Paper
-                              key={index}
-                              elevation={0}
-                              sx={{
-                                p: 1.25,
-                                borderRadius: "14px",
-                                backgroundColor:
-                                  theme.palette.mode === "dark"
-                                    ? colors.primary[500]
-                                    : colors.primary[200],
-                                border: `1px solid ${
-                                  theme.palette.mode === "dark"
-                                    ? colors.grey[700]
-                                    : colors.grey[800]
-                                }`,
-                              }}
-                            >
-                              <Stack direction="row" spacing={1.2} alignItems="flex-start">
-                                <Box
-                                  sx={{
-                                    minWidth: 32,
-                                    height: 32,
-                                    borderRadius: "10px",
-                                    display: "grid",
-                                    placeItems: "center",
-                                    backgroundColor:
-                                      theme.palette.mode === "dark"
-                                        ? "rgba(104, 112, 250, 0.12)"
-                                        : "rgba(104, 112, 250, 0.10)",
-                                    color: colors.blueAccent[500],
-                                    fontWeight: 800,
-                                    mt: 0.25,
-                                  }}
-                                >
-                                  •
-                                </Box>
-
-                                <TextField
-                                  fullWidth
-                                  variant="outlined"
-                                  size="small"
-                                  placeholder={`Benefit ${index + 1}`}
-                                  name={`benefits[${index}]`}
-                                  value={ben}
-                                  onChange={handleChange}
-                                  onBlur={handleBlur}
-                                  sx={{
-                                    "& .MuiOutlinedInput-root": {
-                                      borderRadius: "10px",
-                                    },
-                                  }}
-                                />
-
-                                <IconButton
-                                  color="error"
-                                  onClick={() => remove(index)}
-                                  disabled={values.benefits.length === 1}
-                                  sx={{ mt: 0.25 }}
-                                >
-                                  <RemoveCircleOutlineIcon />
-                                </IconButton>
-                              </Stack>
-                            </Paper>
+                            <Box key={index} display="flex" gap={1} alignItems="center">
+                              <TextField
+                                fullWidth
+                                variant="outlined"
+                                size="small"
+                                placeholder={`Benefit ${index + 1}`}
+                                name={`benefits[${index}]`}
+                                value={ben}
+                                onChange={handleChange}
+                                onBlur={handleBlur}
+                                sx={softFieldSx}
+                              />
+                              <IconButton
+                                color="error"
+                                onClick={() => remove(index)}
+                                disabled={values.benefits.length === 1}
+                                sx={{ backgroundColor: alpha(theme.palette.error.main, 0.1) }}
+                              >
+                                <RemoveCircleOutlineIcon />
+                              </IconButton>
+                            </Box>
                           ))}
 
                           <Button
                             startIcon={<AddCircleOutlineIcon />}
                             onClick={() => push("")}
                             size="small"
-                            color="secondary"
+                            variant="text"
                             sx={{
-                              mt: 1,
                               alignSelf: "flex-start",
-                              textTransform: "none",
-                              fontWeight: 700,
-                              borderRadius: "10px",
+                              color: theme.palette.text.primary,
                             }}
                           >
                             Add Benefit
@@ -811,14 +696,16 @@ const AddJobOpeningForm = () => {
                     {sectionTitle(
                       <EventOutlinedIcon fontSize="small" />,
                       "Hiring Logistics",
-                      "Define positions to fill and recruitment dates"
+                      "Define positions to fill and recruitment dates",
+                      theme.palette.primary.main,
+                      alpha(theme.palette.primary.main, 0.12)
                     )}
 
                     <Grid container spacing={2.5}>
                       <Grid item xs={12} sm={4}>
                         <TextField
                           fullWidth
-                          variant="filled"
+                          variant="outlined"
                           label="Positions to Fill"
                           name="positions_to_fill"
                           type="number"
@@ -852,7 +739,7 @@ const AddJobOpeningForm = () => {
                               slotProps={{
                                 textField: {
                                   fullWidth: true,
-                                  variant: "filled",
+                                  variant: "outlined",
                                   onBlur: field.onBlur,
                                   error: meta.touched && !!meta.error,
                                   helperText: meta.touched && meta.error,
@@ -882,7 +769,7 @@ const AddJobOpeningForm = () => {
                               slotProps={{
                                 textField: {
                                   fullWidth: true,
-                                  variant: "filled",
+                                  variant: "outlined",
                                   onBlur: field.onBlur,
                                   error: meta.touched && !!meta.error,
                                   helperText: meta.touched && meta.error,
@@ -898,21 +785,15 @@ const AddJobOpeningForm = () => {
                 </Grid>
               </Grid>
 
+              {/* Submission Footer */}
               <Paper
                 elevation={0}
                 sx={{
                   mt: 3,
-                  p: 2,
+                  p: 2.5,
                   borderRadius: "18px",
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? colors.primary[400]
-                      : colors.primary[100],
-                  border: `1px solid ${
-                    theme.palette.mode === "dark"
-                      ? colors.grey[700]
-                      : colors.grey[800]
-                  }`,
+                  backgroundColor: theme.palette.background.paper,
+                  border: `1px solid ${theme.palette.divider}`,
                 }}
               >
                 <Stack
@@ -925,8 +806,8 @@ const AddJobOpeningForm = () => {
                     <Typography
                       variant="h6"
                       sx={{
-                        fontWeight: 800,
-                        color: colors.grey[100],
+                        fontWeight: 600,
+                        color: theme.palette.text.primary,
                       }}
                     >
                       Ready to create this opening?
@@ -934,10 +815,7 @@ const AddJobOpeningForm = () => {
                     <Typography
                       variant="body2"
                       sx={{
-                        color:
-                          theme.palette.mode === "dark"
-                            ? colors.grey[300]
-                            : colors.grey[500],
+                        color: theme.palette.text.secondary,
                       }}
                     >
                       All vacancy details will be submitted in a clean, structured format.
@@ -949,11 +827,10 @@ const AddJobOpeningForm = () => {
                       variant="outlined"
                       onClick={() => navigate("/recruitment/openings")}
                       sx={{
-                        borderRadius: "12px",
+                        borderRadius: "10px",
                         px: 2.5,
-                        py: 1.1,
-                        textTransform: "none",
-                        fontWeight: 700,
+                        borderColor: theme.palette.divider,
+                        color: theme.palette.text.primary,
                       }}
                     >
                       Cancel
@@ -961,16 +838,13 @@ const AddJobOpeningForm = () => {
 
                     <Button
                       type="submit"
-                      color="secondary"
                       variant="contained"
                       disabled={loading || isSubmitting || dataLoading}
                       sx={{
                         px: 3.5,
-                        py: 1.15,
-                        borderRadius: "12px",
-                        fontWeight: 800,
-                        textTransform: "none",
-                        boxShadow: "none",
+                        borderRadius: "10px",
+                        backgroundColor: theme.palette.primary.main,
+                        color: "#fff",
                       }}
                     >
                       {loading ? (
@@ -996,7 +870,7 @@ const AddJobOpeningForm = () => {
             onClose={() => setSuccess("")}
             severity="success"
             variant="filled"
-            sx={{ width: "100%" }}
+            sx={{ width: "100%", borderRadius: "10px" }}
           >
             {success}
           </Alert>

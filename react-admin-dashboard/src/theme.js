@@ -1,394 +1,326 @@
 import { createContext, useState, useMemo, useEffect } from "react";
-import { createTheme } from "@mui/material/styles";
+import { createTheme, alpha } from "@mui/material/styles";
 
 /* ------------------------------------------------------------------
-   🎨 COLOR TOKENS
+   🎨 COLOR TOKENS 
 ------------------------------------------------------------------ */
 export const tokens = (mode) => ({
   ...(mode === "dark"
     ? {
         grey: {
-          100: "#e0e0e0",
-          200: "#c2c2c2",
-          300: "#a3a3a3",
-          400: "#858585",
-          500: "#666666",
-          600: "#525252",
-          700: "#3d3d3d",
-          800: "#292929",
-          900: "#141414",
+          100: "#f1f5f9", 200: "#e2e8f0", 300: "#cbd5e1",
+          400: "#94a3b8", 500: "#64748b", 600: "#475569",
+          700: "#334155", 800: "#1e293b", 900: "#0f172a",
         },
         primary: {
-          100: "#d0d1d5",
-          200: "#a1a4ab",
-          300: "#727681",
-          400: "#1F2A40",
-          500: "#141b2d",
-          600: "#101624",
-          700: "#0c101b",
-          800: "#080b12",
-          900: "#040509",
+          100: "#e0e7ff", 200: "#c7d2fe", 300: "#a5b4fc",
+          400: "#818cf8", 500: "#6366f1", 600: "#4f46e5",
+          700: "#4338ca", 800: "#312e81", 900: "#1e1b4b",
         },
-        greenAccent: {
-          100: "#dbf5ee",
-          200: "#b7ebde",
-          300: "#94e2cd",
-          400: "#70d8bd",
-          500: "#4cceac",
-          600: "#3da58a",
-          700: "#2e7c67",
-          800: "#1e5245",
-          900: "#0f2922",
-        },
-        redAccent: {
-          100: "#f8dcdb",
-          200: "#f1b9b7",
-          300: "#e99592",
-          400: "#e2726e",
-          500: "#db4f4a",
-          600: "#af3f3b",
-          700: "#832f2c",
-          800: "#58201e",
-          900: "#2c100f",
-        },
-        blueAccent: {
-          100: "#e1e2fe",
-          200: "#c3c6fd",
-          300: "#a4a9fc",
-          400: "#868dfb",
-          500: "#6870fa",
-          600: "#535ac8",
-          700: "#3e4396",
-          800: "#2a2d64",
-          900: "#151632",
-        },
-        purpleAccent: {
-          100: "#e1bee7",
-          200: "#ce93d8",
-          300: "#ba68c8",
-          400: "#ab47bc",
-          500: "#9c27b0",
-          600: "#8e24aa",
-          700: "#7b1fa2",
-          800: "#6a1b9a",
-          900: "#4a148c",
-        },
-        yellowAccent: {
-          100: "#fcf4dd",
-          200: "#faf0c1",
-          300: "#f7eba5",
-          400: "#f5e689",
-          500: "#F2E16D",
-          600: "#c2b457",
-          700: "#918741",
-          800: "#615a2c",
-          900: "#302d16",
-        },
+        status: {
+          success: "#10b981", error: "#f43f5e", warning: "#f59e0b", info: "#3b82f6",
+        }
       }
     : {
         grey: {
-          100: "#141414",
-          200: "#292929",
-          300: "#3d3d3d",
-          400: "#525252",
-          500: "#666666",
-          600: "#858585",
-          700: "#a3a3a3",
-          800: "#c2c2c2",
-          900: "#e0e0e0",
+          100: "#0f172a", 200: "#1e293b", 300: "#334155",
+          400: "#475569", 500: "#64748b", 600: "#94a3b8",
+          700: "#cbd5e1", 800: "#e2e8f0", 900: "#f8fafc",
         },
         primary: {
-          100: "#ffffff",
-          200: "#f9f9f9",
-          300: "#f2f2f2",
-          400: "#f0f0f0",
-          500: "#e5e5e5",
-          600: "#cccccc",
-          700: "#b3b3b3",
-          800: "#999999",
-          900: "#808080",
+          100: "#e0e7ff", 200: "#c7d2fe", 300: "#a5b4fc",
+          400: "#818cf8", 500: "#6366f1", 600: "#4f46e5",
+          700: "#4338ca", 800: "#3730a3", 900: "#312e81",
         },
-        greenAccent: {
-          100: "#0c3015ff",
-          200: "#15482bff",
-          300: "#236f42ff",
-          400: "#30a460ff",
-          500: "#23a825ff",
-          600: "#4cd159ff",
-          700: "#6de06bff",
-          800: "#75e982ff",
-          900: "#aff3c1ff",
-        },
-        redAccent: {
-          100: "#2c100f",
-          200: "#58201e",
-          300: "#832f2c",
-          400: "#af3f3b",
-          500: "#db4f4a",
-          600: "#e2726e",
-          700: "#e99592",
-          800: "#f1b9b7",
-          900: "#f8dcdb",
-        },
-        blueAccent: {
-          100: "#151632",
-          200: "#2a2d64",
-          300: "#3e4396",
-          400: "#535ac8",
-          500: "#6870fa",
-          600: "#868dfb",
-          700: "#a4a9fc",
-          800: "#c3c6fd",
-          900: "#e1e2fe",
-        },
-        purpleAccent: {
-          100: "#e1bee7",
-          200: "#ce93d8",
-          300: "#ba68c8",
-          400: "#ab47bc",
-          500: "#9c27b0",
-          600: "#8e24aa",
-          700: "#7b1fa2",
-          800: "#6a1b9a",
-          900: "#4a148c",
-        },
-        yellowAccent: {
-          100: "#fcf4dd",
-          200: "#faf0c1",
-          300: "#f7eba5",
-          400: "#f5e689",
-          500: "#F2E16D",
-          600: "#c2b457",
-          700: "#918741",
-          800: "#615a2c",
-          900: "#302d16",
-        },
+        status: {
+          success: "#059669", error: "#dc2626", warning: "#d97706", info: "#2563eb",
+        }
       }),
 });
 
 /* ------------------------------------------------------------------
-   ⚙️ MUI THEME SETTINGS
+   ⚙️ MASTER THEME SETTINGS (ULTRA-LIGHT & AIRY)
 ------------------------------------------------------------------ */
 export const themeSettings = (mode) => {
   const colors = tokens(mode);
+  const isDark = mode === "dark";
+
+  // Ultra-clean, modern sans-serif stack prioritized for readability at small sizes
+  const fontStack = [
+    '"Inter"', '"Geist"', '"SF Pro Display"', "-apple-system", 
+    "BlinkMacSystemFont", '"Segoe UI"', "Roboto", "Helvetica", "sans-serif"
+  ].join(",");
 
   return {
     palette: {
       mode,
-      ...(mode === "dark"
-        ? {
-            primary: { main: colors.primary[500] },
-            secondary: { main: colors.greenAccent[500] },
-            neutral: {
-              dark: colors.grey[700],
-              main: colors.grey[500],
-              light: colors.grey[100],
-            },
-            background: { default: colors.primary[500] },
-          }
-        : {
-            primary: { main: colors.primary[100] },
-            secondary: { main: colors.greenAccent[500] },
-            neutral: {
-              dark: colors.grey[700],
-              main: colors.grey[500],
-              light: colors.grey[100],
-            },
-            background: { default: "#f9f9f9" },
-          }),
+      primary: { main: colors.primary[500], light: colors.primary[400], dark: colors.primary[600] },
+      success: { main: colors.status.success },
+      error: { main: colors.status.error },
+      warning: { main: colors.status.warning },
+      info: { main: colors.status.info },
+      background: {
+        default: isDark ? "#020617" : "#f8fafc",
+        paper: isDark ? "#0f172a" : "#ffffff", 
+      },
+      text: {
+        primary: isDark ? colors.grey[100] : colors.grey[100],
+        secondary: isDark ? colors.grey[400] : colors.grey[500],
+        disabled: alpha(isDark ? colors.grey[400] : colors.grey[500], 0.5),
+      },
+      divider: alpha(colors.grey[500], isDark ? 0.2 : 0.1),
+      action: {
+        hover: alpha(colors.primary[500], 0.04),
+        selected: alpha(colors.primary[500], 0.08),
+        disabled: alpha(colors.grey[500], 0.3),
+        disabledBackground: alpha(colors.grey[500], 0.1),
+      }
     },
 
+    /* ---------------- OPTICAL TYPOGRAPHY (SMALLER & LIGHTER) ---------------- */
+    typography: {
+      fontFamily: fontStack,
+      fontSize: 12, // Dropped base size to shrink entire UI scaling
+      
+      // Shifted all weights down by ~100
+      fontWeightLight: 300,
+      fontWeightRegular: 300, // Body text is now light
+      fontWeightMedium: 400,  // Buttons/Subtitles are now regular
+      fontWeightBold: 500,    // Headers are now medium
+      
+      h1: { fontSize: "1.6rem", fontWeight: 400, letterSpacing: "-0.03em" },
+      h2: { fontSize: "1.35rem", fontWeight: 400, letterSpacing: "-0.02em" },
+      h3: { fontSize: "1.15rem", fontWeight: 400, letterSpacing: "-0.015em" },
+      h4: { fontSize: "1rem", fontWeight: 500, letterSpacing: "-0.01em" },
+      h5: { fontSize: "0.9rem", fontWeight: 500 },
+      h6: { fontSize: "0.8rem", fontWeight: 500, letterSpacing: "0.01em" }, 
+      
+      subtitle1: { fontSize: "0.85rem", fontWeight: 300, color: isDark ? colors.grey[300] : colors.grey[500] },
+      subtitle2: { fontSize: "0.75rem", fontWeight: 300, color: isDark ? colors.grey[400] : colors.grey[600] },
+      
+      body1: { fontSize: "0.85rem", fontWeight: 300, lineHeight: 1.6, letterSpacing: "0.01em" },
+      body2: { fontSize: "0.75rem", fontWeight: 300, lineHeight: 1.6, letterSpacing: "0.015em" },
+      
+      button: { textTransform: "none", fontWeight: 400, fontSize: "0.8rem", letterSpacing: "0.02em" },
+      overline: { fontSize: "0.7rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" },
+      caption: { fontSize: "0.7rem", fontWeight: 300, color: isDark ? colors.grey[400] : colors.grey[500] },
+    },
+
+    /* ---------------- GLOBAL COMPONENTS & DEFAULTS ---------------- */
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          "*, *::before, *::after": {
-            transition: "background-color 0.35s ease, color 0.35s ease",
+          "*, *::before, *::after": { transition: "background-color 0.15s ease, border-color 0.15s ease" },
+          body: {
+            backgroundColor: isDark ? "#020617" : "#f8fafc",
+            scrollbarColor: isDark ? `${colors.grey[700]} transparent` : `${colors.grey[300]} transparent`,
+            "&::-webkit-scrollbar, & *::-webkit-scrollbar": { width: "6px", height: "6px" },
+            "&::-webkit-scrollbar-track, & *::-webkit-scrollbar-track": { background: "transparent" },
+            "&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb": { backgroundColor: alpha(colors.grey[500], 0.3), borderRadius: "6px" },
+            // Font rendering optimization for an extra crisp look on Mac/Windows
+            WebkitFontSmoothing: "antialiased",
+            MozOsxFontSmoothing: "grayscale",
           },
-              /* -------------------------------
-          FullCalendar theme overrides
-          scoped to .ligco-calendar wrapper
-        -------------------------------- */
-        ".ligco-calendar .fc": {
-          fontFamily: ["Source Sans Pro", "sans-serif"].join(","),
-          color: mode === "dark" ? colors.grey[100] : colors.grey[100],
-        },
-
-        ".ligco-calendar .fc .fc-toolbar-title": {
-          fontSize: "1.05rem",
-          fontWeight: 800,
-          color: mode === "dark" ? colors.grey[100] : colors.grey[200],
-        },
-
-        ".ligco-calendar .fc .fc-button": {
-          borderRadius: "10px",
-          border: "0",
-          boxShadow: "none",
-          textTransform: "none",
-          fontWeight: 700,
-          padding: "6px 10px",
-          backgroundColor: mode === "dark" ? colors.primary[500] : colors.primary[300],
-          color: mode === "dark" ? colors.grey[100] : colors.grey[100],
-        },
-
-        ".ligco-calendar .fc .fc-button:hover": {
-          backgroundColor: mode === "dark" ? colors.primary[400] : colors.primary[400],
-        },
-
-        ".ligco-calendar .fc .fc-button:disabled": {
-          opacity: 0.6,
-        },
-
-        ".ligco-calendar .fc .fc-daygrid-day, .ligco-calendar .fc .fc-timegrid-slot": {
-          borderColor: mode === "dark" ? colors.grey[700] : colors.grey[300],
-        },
-
-        ".ligco-calendar .fc .fc-col-header-cell": {
-          backgroundColor: mode === "dark" ? colors.primary[500] : colors.primary[300],
-          borderColor: mode === "dark" ? colors.grey[700] : colors.grey[300],
-          color: mode === "dark" ? colors.grey[100] : colors.grey[100],
-          fontWeight: 800,
-        },
-
-        ".ligco-calendar .fc .fc-scrollgrid": {
-          borderColor: mode === "dark" ? colors.grey[700] : colors.grey[300],
-          borderRadius: "14px",
-          overflow: "hidden",
-        },
-
-        ".ligco-calendar .fc .fc-day-today": {
-          backgroundColor: mode === "dark" ? "rgba(76, 206, 172, 0.12)" : "rgba(35, 168, 37, 0.10)",
-        },
-
-        ".ligco-calendar .fc .fc-event": {
-          borderRadius: "10px",
-          border: "0",
-          padding: "2px 6px",
-          fontWeight: 700,
-        },
-
-        ".ligco-calendar .fc .fc-list-event:hover td": {
-          backgroundColor: mode === "dark" ? colors.primary[400] : colors.primary[400],
-        },
-
-        ".ligco-calendar .fc .fc-popover": {
-          backgroundColor: mode === "dark" ? colors.primary[400] : colors.primary[200],
-          borderColor: mode === "dark" ? colors.grey[700] : colors.grey[300],
-          color: mode === "dark" ? colors.grey[100] : colors.grey[200],
-          borderRadius: "14px",
-          overflow: "hidden",
-        },
-
-        ".ligco-calendar .fc .fc-popover-header": {
-          backgroundColor: mode === "dark" ? colors.primary[500] : colors.primary[300],
-          color: mode === "dark" ? colors.grey[100] : colors.grey[100],
-          fontWeight: 800,
-        },
         },
       },
 
-      MuiFilledInput: {
+      /* LAYER 3: NAVIGATION (Glass) */
+      MuiAppBar: {
+        defaultProps: { elevation: 0 },
         styleOverrides: {
           root: {
-            backgroundColor:
-              mode === "dark" ? colors.primary[400] : "#f3f3f3",
-            borderRadius: "8px",
-            "&:hover": {
-              backgroundColor:
-                mode === "dark" ? colors.primary[300] : "#e9e9e9",
-            },
-            "&.Mui-focused": {
-              backgroundColor:
-                mode === "dark" ? colors.primary[300] : "#fff",
-              boxShadow:
-                mode === "dark"
-                  ? "0 0 0 1px #70d8bd"
-                  : "0 0 0 1px #4cceac",
-            },
-            "& input": {
-              color:
-                mode === "dark" ? colors.grey[100] : colors.grey[700],
-            },
-            "& input:-webkit-autofill": {
-              transition: "background-color 5000s ease-in-out 0s",
-              WebkitTextFillColor:
-                mode === "dark" ? colors.grey[100] : colors.grey[700],
-              WebkitBoxShadow: `0 0 0px 1000px ${
-                mode === "dark" ? colors.primary[400] : "#f3f3f3"
-              } inset`,
-            },
+            background: isDark ? alpha("#020617", 0.7) : alpha("#ffffff", 0.8),
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            borderBottom: `1px solid ${alpha(colors.grey[500], isDark ? 0.15 : 0.1)}`,
+            color: isDark ? "#ffffff" : colors.grey[100],
           },
         },
       },
 
+      /* LAYER 1: CONTENT SURFACES */
+      MuiPaper: {
+        defaultProps: { elevation: 0 },
+        styleOverrides: {
+          root: {
+            borderRadius: "10px", // Slightly sharper for a minimal look
+            background: isDark ? "#0f172a" : "#ffffff", 
+            border: `1px solid ${alpha(colors.grey[500], isDark ? 0.2 : 0.1)}`,
+            backgroundImage: "none",
+          },
+        },
+      },
+      MuiCard: {
+        defaultProps: { elevation: 0 },
+        styleOverrides: {
+          root: {
+            borderRadius: "10px",
+            background: isDark ? "#0f172a" : "#ffffff",
+            border: `1px solid ${alpha(colors.grey[500], isDark ? 0.2 : 0.1)}`,
+          },
+        },
+      },
+
+      /* LAYER 2: ELEVATED / MODALS */
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            borderRadius: "12px",
+            background: isDark ? "#1e293b" : "#ffffff", 
+            border: `1px solid ${alpha(colors.grey[500], isDark ? 0.3 : 0.15)}`,
+            boxShadow: isDark ? "0 25px 50px -12px rgba(0, 0, 0, 0.7)" : "0 25px 50px -12px rgba(0, 0, 0, 0.15)",
+          }
+        }
+      },
+      MuiMenu: {
+        styleOverrides: {
+          paper: {
+            marginTop: "8px",
+            borderRadius: "8px",
+            background: isDark ? "#1e293b" : "#ffffff",
+            border: `1px solid ${alpha(colors.grey[500], isDark ? 0.3 : 0.1)}`,
+            boxShadow: isDark ? "0 10px 25px -5px rgba(0, 0, 0, 0.5)" : "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+          }
+        }
+      },
+
+      /* Buttons & Actions */
+      MuiButton: {
+        defaultProps: { disableElevation: true },
+        styleOverrides: {
+          root: {
+            borderRadius: "6px", 
+            padding: "6px 14px",
+            transition: "all 0.15s ease",
+          },
+          contained: {
+            background: colors.primary[500],
+            color: "#fff",
+            "&:hover": { background: colors.primary[600] },
+          },
+          outlined: {
+            borderColor: alpha(colors.grey[500], 0.3),
+            "&:hover": { backgroundColor: alpha(colors.grey[500], 0.05), borderColor: colors.grey[500] },
+          },
+          text: {
+            "&:hover": { backgroundColor: alpha(colors.grey[500], 0.08) },
+          }
+        },
+      },
+
+      /* Form Inputs */
+      MuiTextField: { defaultProps: { variant: "outlined", size: "small" } },
+      MuiOutlinedInput: {
+        styleOverrides: {
+          root: {
+            borderRadius: "6px", 
+            backgroundColor: isDark ? "#020617" : "#f8fafc", 
+            "& fieldset": { borderColor: alpha(colors.grey[500], 0.3) },
+            "&:hover fieldset": { borderColor: alpha(colors.grey[500], 0.6) },
+            "&.Mui-focused fieldset": { borderWidth: "1px", borderColor: colors.primary[500] },
+          },
+          input: { padding: "8px 12px", fontSize: "0.8rem", fontWeight: 300 },
+        },
+      },
       MuiInputLabel: {
         styleOverrides: {
-          root: {
-            color:
-              mode === "dark" ? colors.grey[200] : colors.grey[500],
-            "&.Mui-focused": {
-              color: colors.greenAccent[400],
-            },
+          root: { 
+            fontSize: "0.8rem", 
+            fontWeight: 300,
+            transform: "translate(14px, 9px) scale(1)", 
+            "&.MuiInputLabel-shrink": { transform: "translate(14px, -9px) scale(0.85)" } 
           },
         },
       },
-    },
 
-    typography: {
-      fontFamily: ["Source Sans Pro", "sans-serif"].join(","),
-      fontSize: 12,
-      h1: { fontSize: 40 },
-      h2: { fontSize: 32 },
-      h3: { fontSize: 24 },
-      h4: { fontSize: 20 },
-      h5: { fontSize: 16 },
-      h6: { fontSize: 14 },
+      /* DataGrid & Tables */
+      MuiDataGrid: {
+        styleOverrides: {
+          root: {
+            border: "none",
+            fontSize: "0.75rem", // Ultra dense datagrid text
+            fontWeight: 300,
+            "--DataGrid-rowBorderColor": alpha(colors.grey[500], isDark ? 0.15 : 0.1),
+          },
+          columnHeaders: {
+            background: isDark ? "#1e293b" : "#f1f5f9", 
+            borderBottom: `1px solid ${alpha(colors.grey[500], isDark ? 0.3 : 0.2)}`,
+            minHeight: "36px !important", // Even tighter headers
+            maxHeight: "36px !important",
+          },
+          columnHeaderTitle: { 
+            fontWeight: 500, 
+            letterSpacing: "0.02em",
+            color: isDark ? colors.grey[300] : colors.grey[600],
+          },
+          row: { 
+            minHeight: "40px !important", // Tighter rows
+            maxHeight: "40px !important",
+            "&:hover": { backgroundColor: alpha(colors.primary[500], 0.04) },
+            "&.Mui-selected": {
+              backgroundColor: alpha(colors.primary[500], 0.08),
+              "&:hover": { backgroundColor: alpha(colors.primary[500], 0.12) },
+            }
+          },
+          cell: { 
+            borderBottom: `1px solid ${alpha(colors.grey[500], isDark ? 0.15 : 0.1)}`,
+            padding: "0 16px",
+            "&:focus, &:focus-within": { outline: "none" } 
+          },
+          columnSeparator: { display: "none" }, 
+          footerContainer: { 
+            borderTop: `1px solid ${alpha(colors.grey[500], isDark ? 0.2 : 0.1)}`, 
+            background: isDark ? "#0f172a" : "#ffffff",
+            minHeight: "40px !important"
+          }
+        },
+      },
+      
+      /* Information Displays (Chips, Alerts) */
+      MuiChip: {
+        styleOverrides: {
+          root: { borderRadius: "4px", fontWeight: 400, fontSize: "0.7rem", height: "22px" },
+          filled: { backgroundColor: isDark ? alpha(colors.grey[500], 0.2) : alpha(colors.grey[500], 0.1) }
+        }
+      },
+      MuiAlert: {
+        styleOverrides: {
+          root: { borderRadius: "8px", fontWeight: 400, fontSize: "0.8rem", alignItems: "center" },
+        }
+      },
     },
   };
 };
 
 /* ------------------------------------------------------------------
    🌗 CONTEXT + HOOK
-   - Syncs with system preference LIVE
-   - Saves mode in localStorage
-   - Animates transitions
 ------------------------------------------------------------------ */
-
 export const ColorModeContext = createContext({
   toggleColorMode: () => {},
 });
 
 export const useMode = () => {
-  // Load saved mode or fallback to system
   const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)");
   const savedMode = localStorage.getItem("themeMode");
 
-  const getInitialMode = () => {
-    return savedMode || (systemPrefersDark.matches ? "dark" : "light");
-  };
+  const [mode, setMode] = useState(
+    savedMode || (systemPrefersDark.matches ? "dark" : "light")
+  );
 
-  const [mode, setMode] = useState(getInitialMode);
-
-  /* --- LIVE sync with system preference --- */
   useEffect(() => {
     const listener = (e) => {
       const newMode = e.matches ? "dark" : "light";
-
-      // Only auto-switch if user hasn't manually chosen a mode
-      if (!savedMode) {
-        setMode(newMode);
-      }
+      if (!savedMode) setMode(newMode);
     };
 
     systemPrefersDark.addEventListener("change", listener);
     return () => systemPrefersDark.removeEventListener("change", listener);
   }, [savedMode]);
 
-  /* --- Persist mode in localStorage --- */
   useEffect(() => {
     localStorage.setItem("themeMode", mode);
   }, [mode]);
 
-  /* --- Provided toggle function --- */
   const colorMode = useMemo(
     () => ({
       toggleColorMode: () =>
@@ -397,10 +329,8 @@ export const useMode = () => {
     []
   );
 
-  /* --- Animated theme switch --- */
   useEffect(() => {
-    document.body.style.transition =
-      "background-color 0.35s ease, color 0.35s ease";
+    document.body.style.transition = "background-color 0.15s ease, color 0.15s ease";
   }, []);
 
   const theme = useMemo(() => createTheme(themeSettings(mode)), [mode]);

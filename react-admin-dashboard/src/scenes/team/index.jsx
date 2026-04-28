@@ -55,7 +55,6 @@ const Team = () => {
 
   // ==========================================
   // 🛡️ CRASH-PROOF COLOR ENGINE
-  // Uses native optional chaining to guarantee valid hex strings
   // ==========================================
   const safeColors = useMemo(() => ({
     primary: {
@@ -197,21 +196,29 @@ const Team = () => {
     if (!employees.length) { alert('No data to print'); return; }
     const printableColumns = columns.filter(c => c.field !== 'actions' && columnVisibilityModel[c.field] !== false);
     
+    // Removed dummy data fallbacks. Only uses actual API data if present.
     const company = {
-        name: user?.company?.name || "LIGCO TECHNOLOGIES",
-        tagline: user?.company?.tagline || "Your Innovative Tech Partner",
-        logoUrl: user?.company?.logoUrl || "https://via.placeholder.com/70x70.png?text=LOGO",
-        tel: user?.company?.tel || "0725611832",
-        email: user?.company?.email || "example@ligco.tech",
-        poBox: user?.company?.poBox || "P.O. Box 1234 - Kitale",
+        name: user?.company?.name || "",
+        tagline: user?.company?.tagline || "",
+        logoUrl: user?.company?.logoUrl || "",
+        tel: user?.company?.tel || "",
+        email: user?.company?.email || "",
+        poBox: user?.company?.poBox || "",
     };
+
+    // Dynamically build the contact line to avoid trailing pipes if data is missing
+    const contactInfo = [
+      company.poBox ? `P.O. Box: ${company.poBox}` : '',
+      company.tel ? `Tel: ${company.tel}` : '',
+      company.email ? `Email: ${company.email}` : ''
+    ].filter(Boolean).join(' | ');
 
     const headerHtml = `
       <div style="text-align: center; padding-bottom: 10px; font-family: 'Helvetica Neue', sans-serif;">
-        <img src="${company.logoUrl}" alt="Logo" style="width: 70px; height: 70px; object-fit: contain; margin-bottom: 5px;" />
-        <h2 style="margin: 0; font-size: 20px; color: #1a1a1a;">${company.name.toUpperCase()}</h2>
+        ${company.logoUrl ? `<img src="${company.logoUrl}" alt="Logo" style="width: 70px; height: 70px; object-fit: contain; margin-bottom: 5px;" />` : ''}
+        ${company.name ? `<h2 style="margin: 0; font-size: 20px; color: #1a1a1a;">${company.name.toUpperCase()}</h2>` : ''}
         ${company.tagline ? `<p style="margin: 2px 0; font-size: 11px; color: #666;">${company.tagline}</p>` : ''}
-        <p style="margin: 6px 0; font-size: 12px; color: #444;">${company.poBox ? `P.O. Box: ${company.poBox}` : ''} | Tel: ${company.tel} | Email: ${company.email}</p>
+        ${contactInfo ? `<p style="margin: 6px 0; font-size: 12px; color: #444;">${contactInfo}</p>` : ''}
         <hr style="margin: 15px 0 10px; border: none; border-top: 1px solid #ddd;" />
         <h3 style="margin: 5px 0 0; font-size: 16px; color: #333;">EMPLOYEE DIRECTORY REPORT</h3>
       </div>
@@ -384,7 +391,6 @@ const Team = () => {
     boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.2)' : '0 10px 30px rgba(0,0,0,0.03)',
   };
 
-  // For the table wrapper, we make the background match the page natively in Dark Mode
   const tableWrapperSx = {
     borderRadius: "20px",
     p: 0,
@@ -392,7 +398,7 @@ const Team = () => {
     backgroundColor: isDark ? theme.palette.background.default : '#ffffff',
     border: `1px solid ${isDark ? alpha(safeColors.grey[700], 0.4) : alpha(safeColors.grey[300], 0.5)}`,
     boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.2)' : '0 10px 30px rgba(0,0,0,0.03)',
-    backgroundImage: 'none' // Ensures no MUI paper elevation overlays
+    backgroundImage: 'none'
   };
 
   const actionButtonSx = {
@@ -484,7 +490,7 @@ const Team = () => {
                   borderBottom: `1px solid ${alpha(safeColors.grey[500], 0.1)}`,
                   display: 'flex',
                   alignItems: 'center',
-                  fontSize: '0.85rem', // ensures text is clean in compact mode
+                  fontSize: '0.85rem',
                 },
                 "& .MuiDataGrid-footerContainer": {
                   borderTop: `1px solid ${alpha(safeColors.grey[500], 0.15)}`,
@@ -533,7 +539,6 @@ const Team = () => {
           </MenuItem>
         ))}
       </Menu>
-
     </Box>
   );
 };
