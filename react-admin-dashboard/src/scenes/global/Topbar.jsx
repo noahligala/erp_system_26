@@ -1,4 +1,4 @@
-import React, { useContext, useState, useRef, useEffect } from "react";
+import React, { useContext, useMemo, useRef, useState, useEffect, useCallback } from "react";
 import {
   Box,
   IconButton,
@@ -7,108 +7,169 @@ import {
   Menu,
   MenuItem,
   Typography,
-  Popover, Tooltip,
-  Paper,
+  Popover,
+  Tooltip,
   List,
-  ListItem,
+  ListItemButton,
   ListItemText,
 } from "@mui/material";
-import { ColorModeContext, tokens } from "../../theme";
+
+import { ColorModeContext } from "../../theme";
+
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import SearchIcon from "@mui/icons-material/Search";
+
 import { useNavigate } from "react-router-dom";
 import { secureStore } from "../../utils/storage";
-import LogoutButton from "../../scenes/global/LogoutButton";
 
-// ✅ Local Search Index Builder
 const buildSearchIndex = (employees = []) => {
   const staticRoutes = [
-    { label: "Main Dashboard", path: "/", type: "Page", keywords: ["dashboard", "home", "overview"] },
-    // Update paths to match your actual routes
-    { label: "Employees", path: "/team", type: "Module", keywords: ["hrm", "employee", "staff", "workers", "team"] },
-    { label: "Leave Management", path: "/hrm/manage-leave", type: "Page", keywords: ["leave", "vacation", "days off", "manage"] },
-    { label: "Job Openings", path: "/recruitment/openings", type: "Module", keywords: ["jobs", "recruitment", "careers", "openings"] },
-    { label: "Applicants", path: "/recruitment/applicants", type: "Module", keywords: ["applicants", "candidates", "recruitment"] },
-    { label: "Contacts", path: "/contacts", type: "Page", keywords: ["contacts", "directory"] },
-    { label: "Invoices", path: "/invoices", type: "Page", keywords: ["invoices", "billing", "finance"] },
-    { label: "Profile Form", path: "/user/profile", type: "Page", keywords: [ "user", "profile"] },
-    { label: "Calendar", path: "/calendar", type: "Page", keywords: ["calendar", "events", "schedule"] },
-    { label: "FAQ", path: "/faq", type: "Page", keywords: ["faq", "help", "questions"] },
-    // Add other routes...
+    {
+      label: "Main Dashboard",
+      path: "/",
+      type: "Page",
+      keywords: ["dashboard", "home", "overview"],
+    },
+    {
+      label: "Employees",
+      path: "/team",
+      type: "Module",
+      keywords: ["hrm", "employee", "staff", "workers", "team"],
+    },
+    {
+      label: "Leave Management",
+      path: "/hrm/manage-leave",
+      type: "Page",
+      keywords: ["leave", "vacation", "days off", "manage"],
+    },
+    {
+      label: "Job Openings",
+      path: "/recruitment/openings",
+      type: "Module",
+      keywords: ["jobs", "recruitment", "careers", "openings"],
+    },
+    {
+      label: "Applicants",
+      path: "/recruitment/applicants",
+      type: "Module",
+      keywords: ["applicants", "candidates", "recruitment"],
+    },
+    {
+      label: "Contacts",
+      path: "/contacts",
+      type: "Page",
+      keywords: ["contacts", "directory"],
+    },
+    {
+      label: "Invoices",
+      path: "/invoices",
+      type: "Page",
+      keywords: ["invoices", "billing", "finance"],
+    },
+    {
+      label: "Profile Form",
+      path: "/user/profile",
+      type: "Page",
+      keywords: ["user", "profile"],
+    },
+    {
+      label: "Calendar",
+      path: "/calendar",
+      type: "Page",
+      keywords: ["calendar", "events", "schedule"],
+    },
+    {
+      label: "FAQ",
+      path: "/faq",
+      type: "Page",
+      keywords: ["faq", "help", "questions"],
+    },
   ];
 
-  // This will be empty for now, but is ready if you pass employees prop later
   const employeeEntries = employees.map((emp) => ({
-    label: `${emp.firstName} ${emp.lastName}`,
-    path: `/hrm/employee-profile/${emp.id}`, // Corrected path
+    label: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
+    path: `/hrm/employee-profile/${emp.id}`,
     type: "Employee",
-    keywords: [emp.firstName, emp.lastName, "employee", "staff", "profile"],
+    keywords: [
+      emp.firstName,
+      emp.lastName,
+      "employee",
+      "staff",
+      "profile",
+    ].filter(Boolean),
   }));
 
   return [...staticRoutes, ...employeeEntries];
 };
 
-// ✅ Fuzzy local search
 const searchLocalData = (query, index) => {
-  if (!query || query.trim() === "") return [];
-  const lower = query.toLowerCase();
+  const lower = query.trim().toLowerCase();
 
-  return index.filter(
-    (item) =>
-      item.label.toLowerCase().includes(lower) ||
-      (item.keywords && item.keywords.some((k) => k.toLowerCase().includes(lower)))
-  );
+  if (!lower) return [];
+
+  return index
+    .filter((item) => {
+      const labelMatch = item.label.toLowerCase().includes(lower);
+      const keywordMatch = item.keywords?.some((keyword) =>
+        keyword.toLowerCase().includes(lower)
+      );
+
+      return labelMatch || keywordMatch;
+    })
+    .slice(0, 8);
 };
 
-// --- ✨ FIX: Corrected component signature ---
-const Topbar = ({ setIsSidebar }) => {
+const Topbar = ({ setIsSidebar, employees = [] }) => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
+  const styles = theme.topbar;
   const colorMode = useContext(ColorModeContext);
   const navigate = useNavigate();
 
-  // 🔍 Build local search index
-  const [indexData, setIndexData] = useState([]);
-
-  // --- ✨ FIX: Added empty dependency array [] ---
-  // This hook now runs only ONCE on mount, which breaks the infinite loop.
-  // We pass an empty array to buildSearchIndex because App.js isn't providing employee data here.
-  useEffect(() => {
-    setIndexData(buildSearchIndex([]));
-  }, []); // <--- Empty array breaks the loop
-
-  // 🔸 States
-  const [anchorNotif, setAnchorNotif] = useState(null);
-  const [anchorUser, setAnchorUser] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [results, setResults] = useState([]);
-  const [anchorSearch, setAnchorSearch] = useState(null);
   const searchRef = useRef(null);
   const searchTimeout = useRef(null);
 
-  // 🔔 Notification & User Menu Handlers
+  const indexData = useMemo(() => buildSearchIndex(employees), [employees]);
+
+  const [anchorNotif, setAnchorNotif] = useState(null);
+  const [anchorUser, setAnchorUser] = useState(null);
+  const [anchorSearch, setAnchorSearch] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [results, setResults] = useState([]);
+
   const handleNotifOpen = (event) => setAnchorNotif(event.currentTarget);
   const handleNotifClose = () => setAnchorNotif(null);
+
   const handleUserOpen = (event) => setAnchorUser(event.currentTarget);
   const handleUserClose = () => setAnchorUser(null);
 
-  const handleSettings = () => {
-    handleUserClose();
-    // Assuming you have a settings route
-    navigate("/settings"); // Update path if different
-  };
+  const closeSearch = useCallback(() => {
+    setAnchorSearch(null);
+  }, []);
 
-  /** 🔍 Debounced Search Logic */
-  const handleSearchChange = (e) => {
-    const value = e.target.value;
+  const clearSearch = useCallback(() => {
+    setSearchTerm("");
+    setResults([]);
+    setAnchorSearch(null);
+  }, []);
+
+  const handleSettings = useCallback(() => {
+    handleUserClose();
+    navigate("/settings");
+  }, [navigate]);
+
+  const handleSearchChange = (event) => {
+    const value = event.target.value;
     setSearchTerm(value);
 
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (value.trim() === "") {
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+
+    if (!value.trim()) {
       setResults([]);
       setAnchorSearch(null);
       return;
@@ -116,211 +177,224 @@ const Topbar = ({ setIsSidebar }) => {
 
     searchTimeout.current = setTimeout(() => {
       const matches = searchLocalData(value, indexData);
+
       setResults(
         matches.length
           ? matches
           : [{ label: "No matches found", type: "Info", path: "#" }]
       );
-      setAnchorSearch(searchRef.current); // Open popover
-    }, 200);
+
+      setAnchorSearch(searchRef.current);
+    }, 180);
   };
 
-  /** 🚀 Manual Search Submission */
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+
     const term = searchTerm.trim().toLowerCase();
+
     if (!term) return;
 
-    // Try to find a good match
-    const match = indexData.find((item) =>
-      item.label.toLowerCase().includes(term)
+    const match = indexData.find(
+      (item) =>
+        item.label.toLowerCase().includes(term) ||
+        item.keywords?.some((keyword) => keyword.toLowerCase().includes(term))
     );
 
-    if (match && match.path) {
+    if (match?.path && match.path !== "#") {
       navigate(match.path);
-      setAnchorSearch(null);
-      setSearchTerm("");
-    } else {
-      // Show "no matches" if submit fails
-      setResults([{ label: "No matches found", type: "Info", path: "#" }]);
-      setAnchorSearch(searchRef.current);
+      clearSearch();
+      return;
     }
+
+    setResults([{ label: "No matches found", type: "Info", path: "#" }]);
+    setAnchorSearch(searchRef.current);
   };
 
-  /** 🧭 Handle Result Click */
   const handleResultClick = (path) => {
-    if (path && path !== "#") {
-      navigate(path);
-      setAnchorSearch(null);
-      setSearchTerm("");
-    }
+    if (!path || path === "#") return;
+
+    navigate(path);
+    clearSearch();
   };
 
-  /** 🔒 Logout Handler */
   const handleLogout = () => {
     try {
-      // Using secureStore for all session items as per your Sidebar
       secureStore.remove("user_data");
       secureStore.remove("accessToken");
       secureStore.remove("refreshToken");
       secureStore.remove("secret_key");
-      // Clear other storages just in case
+
       localStorage.clear();
       sessionStorage.clear();
-      
+
       navigate("/login", { replace: true });
-      // Reload is good to ensure all states are reset
-      setTimeout(() => window.location.reload(), 100);
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
     } catch (err) {
       console.error("Logout failed:", err);
-      window.location.href = "/login"; // Force redirect
+      window.location.href = "/login";
     }
   };
 
-  /** ❌ Close search popover when clicking elsewhere */
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
-        setAnchorSearch(null);
+        closeSearch();
       }
     };
+
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []); // This hook is safe as it has an empty dependency array
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+
+      if (searchTimeout.current) {
+        clearTimeout(searchTimeout.current);
+      }
+    };
+  }, [closeSearch]);
 
   return (
-    <Box display="flex" justifyContent="space-between" p={2}>
-      {/* 🔍 SEARCH BAR */}
+    <Box sx={styles.root}>
       <Box
         component="form"
         onSubmit={handleSearchSubmit}
-        display="flex"
-        backgroundColor={colors.primary[400]}
-        borderRadius="8px"
-        alignItems="center"
-        sx={{
-          width: "320px",
-          boxShadow:
-            theme.palette.mode === "light"
-              ? "0px 1px 3px rgba(0,0,0,0.1)"
-              : "0px 1px 3px rgba(255,255,255,0.05)",
-        }}
         ref={searchRef}
+        sx={styles.searchWrap}
       >
         <InputBase
-          sx={{ ml: 2, flex: 1 }}
-          placeholder="Search..." // Simplified placeholder
+          sx={styles.searchInput}
+          placeholder="Search modules, pages, employees..."
           value={searchTerm}
           onChange={handleSearchChange}
+          inputProps={{
+            "aria-label": "Search",
+          }}
         />
-        <IconButton type="submit" sx={{ p: 1 }}>
-          <SearchIcon />
+
+        <IconButton type="submit" sx={styles.searchButton}>
+          <SearchIcon fontSize="small" />
         </IconButton>
 
-        {/* 🔽 Search Suggestions */}
         <Popover
           open={Boolean(anchorSearch)}
           anchorEl={anchorSearch}
-          onClose={() => setAnchorSearch(null)}
+          onClose={closeSearch}
           anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
           transformOrigin={{ vertical: "top", horizontal: "left" }}
           disableAutoFocus
           disableEnforceFocus
           PaperProps={{
-             style: { width: searchRef.current ? searchRef.current.clientWidth : '320px' } // Match width
+            sx: {
+              ...styles.searchPopoverPaper,
+              width: searchRef.current ? searchRef.current.clientWidth : 320,
+            },
           }}
         >
-          <Paper sx={{ maxHeight: "300px", overflowY: "auto", background: colors.primary[400] }}>
-            <List dense>
-              {results.map((item, index) => (
-                <ListItem
-                  key={index}
-                  button={item.path !== "#"}
-                  onClick={() => handleResultClick(item.path)}
-                  disabled={item.path === "#"}
-                >
-                  <ListItemText
-                    primary={item.label}
-                    secondary={item.type}
-                    primaryTypographyProps={{
-                      fontWeight: 500,
-                      color:
-                        item.type === "Info"
-                          ? colors.grey[300]
-                          : colors.grey[100],
-                    }}
-                    secondaryTypographyProps={{
-                        color: colors.greenAccent[500]
-                    }}
-                  />
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
+          <List dense sx={styles.searchList}>
+            {results.map((item, index) => (
+              <ListItemButton
+                key={`${item.label}-${index}`}
+                disabled={item.path === "#"}
+                onClick={() => handleResultClick(item.path)}
+                sx={styles.searchItem}
+              >
+                <ListItemText
+                  primary={item.label}
+                  secondary={item.type}
+                  primaryTypographyProps={styles.searchPrimary}
+                  secondaryTypographyProps={styles.searchSecondary}
+                />
+              </ListItemButton>
+            ))}
+          </List>
         </Popover>
       </Box>
 
-      {/* 🌙 ICONS */}
-      <Box display="flex" alignItems="center">
-        <IconButton onClick={colorMode.toggleColorMode}>
-          {theme.palette.mode === "dark" ? (
-            <LightModeOutlinedIcon />
-          ) : (
-            <DarkModeOutlinedIcon />
-          )}
-        </IconButton>
-
-        <IconButton onClick={handleNotifOpen}>
-          <NotificationsOutlinedIcon />
-        </IconButton>
-
-        <Tooltip title="Settings">
-            <IconButton onClick={handleSettings}>
-              <SettingsOutlinedIcon />
-            </IconButton>
+      <Box sx={styles.actions}>
+        <Tooltip
+          title={
+            theme.palette.mode === "dark"
+              ? "Switch to light mode"
+              : "Switch to dark mode"
+          }
+        >
+          <IconButton onClick={colorMode.toggleColorMode} sx={styles.actionButton}>
+            {theme.palette.mode === "dark" ? (
+              <LightModeOutlinedIcon fontSize="small" />
+            ) : (
+              <DarkModeOutlinedIcon fontSize="small" />
+            )}
+          </IconButton>
         </Tooltip>
 
-        <Tooltip title="Profile & Logout">
-            <IconButton onClick={handleUserOpen}>
-              <PersonOutlinedIcon />
-            </IconButton>
+        <Tooltip title="Notifications">
+          <IconButton onClick={handleNotifOpen} sx={styles.actionButton}>
+            <NotificationsOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Settings">
+          <IconButton onClick={handleSettings} sx={styles.actionButton}>
+            <SettingsOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Profile and logout">
+          <IconButton onClick={handleUserOpen} sx={styles.actionButton}>
+            <PersonOutlinedIcon fontSize="small" />
+          </IconButton>
         </Tooltip>
       </Box>
 
-      {/* 🔔 Notifications Popover */}
       <Popover
         open={Boolean(anchorNotif)}
         anchorEl={anchorNotif}
         onClose={handleNotifClose}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
+        PaperProps={{
+          sx: styles.popoverPaper,
+        }}
       >
-        <Box p={2} minWidth="250px" sx={{ background: colors.primary[400] }}>
-          <Typography variant="h6" fontWeight="bold">
-            Notifications
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
+        <Box sx={styles.notificationBox}>
+          <Typography sx={styles.notificationTitle}>Notifications</Typography>
+          <Typography sx={styles.notificationText}>
             No new notifications
           </Typography>
         </Box>
       </Popover>
 
-      {/* 👤 User Menu */}
       <Menu
         anchorEl={anchorUser}
         open={Boolean(anchorUser)}
         onClose={handleUserClose}
+        PaperProps={{
+          sx: styles.menuPaper,
+        }}
         MenuListProps={{
-             sx: { background: colors.primary[400] }
+          sx: styles.menuList,
         }}
       >
-        {/* Update path to your actual profile form route */}
-        <MenuItem onClick={() => { handleUserClose(); navigate("/user/profile"); }}>Profile</MenuItem>
-        <MenuItem onClick={handleSettings}>Settings</MenuItem>
-        {/* Use LogoutButton if it's just a styled button, or call handleLogout */}
-        <MenuItem onClick={handleLogout}>
-            Logout
-            {/* <LogoutButton />  // Or use this if it has its own logic */}
+        <MenuItem
+          sx={styles.menuItem}
+          onClick={() => {
+            handleUserClose();
+            navigate("/user/profile");
+          }}
+        >
+          Profile
+        </MenuItem>
+
+        <MenuItem sx={styles.menuItem} onClick={handleSettings}>
+          Settings
+        </MenuItem>
+
+        <MenuItem sx={styles.dangerMenuItem} onClick={handleLogout}>
+          Logout
         </MenuItem>
       </Menu>
     </Box>

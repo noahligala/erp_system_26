@@ -3,8 +3,8 @@ import {
   Box,
   Button,
   Chip,
-  CircularProgress,
   Divider,
+  CircularProgress,
   FormControl,
   IconButton,
   LinearProgress,
@@ -15,10 +15,13 @@ import {
   Tooltip,
   Typography,
   useTheme,
+  Skeleton,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { tokens } from "../../theme";
+import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { useAuth } from "../../api/AuthProvider";
 import Header from "../../components/Header";
 import LineChart from "../../components/LineChart";
@@ -32,159 +35,317 @@ import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import ShoppingCartCheckoutOutlinedIcon from "@mui/icons-material/ShoppingCartCheckoutOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
-import TrendingUpOutlinedIcon from "@mui/icons-material/TrendingUpOutlined";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
-import NorthEastOutlinedIcon from "@mui/icons-material/NorthEastOutlined";
+
+const getMetricColor = (theme, type) => {
+  switch (type) {
+    case "success":
+      return theme.palette.success.main;
+    case "info":
+      return theme.palette.info.main;
+    case "warning":
+      return theme.palette.warning.main;
+    case "error":
+      return theme.palette.error.main;
+    default:
+      return theme.palette.primary.main;
+  }
+};
+
+const DashboardSkeleton = () => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+
+  return (
+    <Box sx={styles.shell}>
+      <Skeleton
+        variant="rounded"
+        width="100%"
+        height={112}
+        sx={{ mb: 2.5, borderRadius: "14px" }}
+      />
+
+      <Box
+        display="grid"
+        gridTemplateColumns={{
+          xs: "1fr",
+          sm: "repeat(2, 1fr)",
+          xl: "repeat(4, 1fr)",
+        }}
+        gap={2}
+        mb={2.5}
+      >
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton
+            key={i}
+            variant="rounded"
+            height={132}
+            sx={{ borderRadius: "14px" }}
+          />
+        ))}
+      </Box>
+
+      <Box
+        display="grid"
+        gridTemplateColumns={{ xs: "1fr", lg: "repeat(12, 1fr)" }}
+        gap={2}
+      >
+        <Skeleton
+          variant="rounded"
+          height={380}
+          sx={{
+            gridColumn: { xs: "span 1", lg: "span 8" },
+            borderRadius: "14px",
+          }}
+        />
+        <Skeleton
+          variant="rounded"
+          height={380}
+          sx={{
+            gridColumn: { xs: "span 1", lg: "span 4" },
+            borderRadius: "14px",
+          }}
+        />
+      </Box>
+    </Box>
+  );
+};
+
+const SectionTitle = ({ title, subtitle }) => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+
+  return (
+    <Box>
+      <Typography sx={styles.sectionTitle}>{title}</Typography>
+      {subtitle && <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>}
+    </Box>
+  );
+};
+
+const MetricCard = ({ card, onClick }) => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+  const color = getMetricColor(theme, card.colorType);
+
+  return (
+    <Paper
+      elevation={0}
+      onClick={onClick}
+      sx={{
+        ...styles.card,
+        ...styles.metricCard,
+      }}
+      style={{
+        "--accent": color,
+        "--accent-border-strong": alpha(color, 0.28),
+      }}
+    >
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        mb={1.75}
+      >
+        <Box
+          sx={styles.iconBox}
+          style={{
+            "--accent": color,
+            "--accent-bg": alpha(color, 0.1),
+            "--accent-border": alpha(color, 0.16),
+          }}
+        >
+          {card.icon}
+        </Box>
+
+        <Chip
+          label={card.caption}
+          sx={{
+            fontWeight: 400,
+            fontSize: "0.64rem",
+            height: 20,
+            borderRadius: "999px",
+            backgroundColor: alpha(color, 0.08),
+            color,
+          }}
+        />
+      </Stack>
+
+      <Typography sx={styles.metricValue}>{card.value}</Typography>
+      <Typography sx={styles.metricTitle}>{card.title}</Typography>
+    </Paper>
+  );
+};
+
+const ModuleCard = ({ icon, title, subtitle, rows, route }) => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+  const navigate = useNavigate();
+
+  return (
+    <Paper
+      elevation={0}
+      onClick={() => navigate(route)}
+      sx={{
+        ...styles.card,
+        ...styles.moduleCard,
+      }}
+    >
+      <Stack direction="row" spacing={1.25} alignItems="center" mb={2}>
+        <Box sx={styles.iconBox(theme.palette.primary.main, 36, "10px")}>
+          {icon}
+        </Box>
+
+        <Box>
+          <Typography sx={styles.moduleTitle}>{title}</Typography>
+          <Typography sx={styles.moduleSubtitle}>{subtitle}</Typography>
+        </Box>
+      </Stack>
+
+      <Stack spacing={1.5}>
+        {rows.map((row, index) => (
+          <Box key={row.label}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Typography sx={styles.moduleRowLabel}>{row.label}</Typography>
+              <Typography
+                sx={{
+                  ...styles.moduleRowValue,
+                  color: row.color || "text.primary",
+                }}
+              >
+                {row.value}
+              </Typography>
+            </Stack>
+
+            {index < rows.length - 1 && <Divider sx={{ mt: 1.5 }} />}
+          </Box>
+        ))}
+      </Stack>
+    </Paper>
+  );
+};
 
 const Dashboard = () => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
-  const { apiClient, isAuthenticated } = useAuth();
+  const styles = theme.dashboard;
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { apiClient, isAuthenticated, user } = useAuth();
 
-  const [dashboardData, setDashboardData] = useState(null);
-  const [loadingInitial, setLoadingInitial] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [fatalError, setFatalError] = useState(null);
-  const [warning, setWarning] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
   const [timeframeDays, setTimeframeDays] = useState(30);
 
-  const dashboardDataRef = useRef(null);
+  const orgCurrency = user?.company?.currency || "KES";
 
-  useEffect(() => {
-    dashboardDataRef.current = dashboardData;
-  }, [dashboardData]);
+  const formatCurrency = useCallback(
+    (value) => {
+      if (value == null) return "—";
 
-  const formatCurrency = useCallback((value, currency = "KES") => {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return `${currency} 0.00`;
-    return `${currency} ${number.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }, []);
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: orgCurrency,
+      }).format(value);
+    },
+    [orgCurrency]
+  );
 
   const formatNumber = useCallback((value) => {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return "0";
-    return number.toLocaleString();
+    if (value == null) return "—";
+    return new Intl.NumberFormat().format(value);
   }, []);
 
   const formatPercent = useCallback((value) => {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return "0.00%";
-    return `${number.toFixed(2)}%`;
+    if (value == null) return "—";
+    return `${Number(value).toFixed(2)}%`;
   }, []);
 
   const formatDateTime = useCallback((dateValue) => {
     if (!dateValue) return "—";
+
     const dt = new Date(dateValue);
     if (!Number.isFinite(dt.getTime())) return "—";
-    return dt.toLocaleString();
+
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(dt);
   }, []);
 
-  const fetchDashboardData = useCallback(
-    async ({ refresh = false, timeframe = timeframeDays } = {}) => {
-      if (!isAuthenticated) return;
+  const fetchDashboard = async ({ queryKey, signal }) => {
+    const [_key, timeframe] = queryKey;
 
-      if (refresh) {
-        setRefreshing(true);
-      } else {
-        setLoadingInitial(true);
-        setFatalError(null);
-        setWarning(null);
-      }
+    const response = await apiClient.get("/dashboard", {
+      params: { timeframe },
+      signal,
+    });
 
-      try {
-        const response = await apiClient.get("/dashboard", {
-          params: {
-            timeframe,
-            ...(refresh ? { refresh: true } : {}),
-          },
-        });
+    if (!response?.data?.data) {
+      throw new Error(response?.data?.message || "Invalid dashboard response.");
+    }
 
-        const payload = response?.data;
-        const data = payload?.data;
-        const status = payload?.status;
-        const failedSections = Array.isArray(payload?.failed_sections)
-          ? payload.failed_sections
-          : [];
-        const meta = payload?.metadata || {};
+    return response.data;
+  };
 
-        if (!data || typeof data !== "object") {
-          throw new Error(payload?.message || payload?.error || "Invalid dashboard response.");
-        }
+  const {
+    data: payload,
+    isLoading,
+    isFetching,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["dashboard", timeframeDays],
+    queryFn: fetchDashboard,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+  });
 
-        setDashboardData(data);
+  const dashboardData = payload?.data;
+  const meta = payload?.metadata || {};
+  const status = payload?.status;
+  const failedSections = Array.isArray(payload?.failed_sections)
+    ? payload.failed_sections
+    : [];
 
-        if (Number.isFinite(Number(meta.timeframe_days))) {
-          setTimeframeDays(Number(meta.timeframe_days));
-        }
+  const lastUpdated = meta.generated_at ? new Date(meta.generated_at) : new Date();
 
-        if (meta.generated_at) {
-          const generatedDate = new Date(meta.generated_at);
-          setLastUpdated(Number.isFinite(generatedDate.getTime()) ? generatedDate : new Date());
-        } else {
-          setLastUpdated(new Date());
-        }
-
-        if (status === "partial" || failedSections.length > 0) {
-          setWarning(
-            payload?.message ||
-              `Partial data loaded${
-                failedSections.length ? ` — unavailable: ${failedSections.join(", ")}` : ""
-              }.`
-          );
-        } else {
-          setWarning(null);
-        }
-
-        setFatalError(null);
-      } catch (err) {
-        console.error("Dashboard fetch error:", err);
-
-        const message =
-          err?.response?.data?.message ||
-          err?.message ||
-          "Could not connect to the server.";
-
-        if (dashboardDataRef.current) {
-          setWarning(`${message} Showing last loaded dashboard data.`);
-        } else {
-          setFatalError(message);
-          setDashboardData(null);
-        }
-      } finally {
-        setLoadingInitial(false);
-        setRefreshing(false);
-      }
-    },
-    [apiClient, isAuthenticated, timeframeDays]
-  );
-
-  useEffect(() => {
-    fetchDashboardData({ refresh: false, timeframe: timeframeDays });
-  }, [fetchDashboardData, timeframeDays]);
+  const warning =
+    status === "partial" || failedSections.length > 0
+      ? payload?.message ||
+        `Partial data loaded. Unavailable: ${failedSections.join(", ")}`
+      : null;
 
   const financialSummary = useMemo(
     () => dashboardData?.financial_summary || {},
     [dashboardData]
   );
+
   const salesPerformance = useMemo(
     () => dashboardData?.sales_performance || {},
     [dashboardData]
   );
-  const hrmOverview = useMemo(() => dashboardData?.hrm_overview || {}, [dashboardData]);
+
+  const hrmOverview = useMemo(
+    () => dashboardData?.hrm_overview || {},
+    [dashboardData]
+  );
+
   const inventoryStatus = useMemo(
     () => dashboardData?.inventory_status || {},
     [dashboardData]
   );
+
   const purchasingOverview = useMemo(
     () => dashboardData?.purchasing_overview || {},
     [dashboardData]
   );
+
   const recentSales = useMemo(
-    () => (Array.isArray(dashboardData?.recent_sales) ? dashboardData.recent_sales : []),
+    () =>
+      Array.isArray(dashboardData?.recent_sales)
+        ? dashboardData.recent_sales
+        : [],
     [dashboardData]
   );
 
@@ -198,7 +359,9 @@ const Dashboard = () => {
         id: "Sales",
         data: trend.map((item) => ({
           x: item.month || "N/A",
-          y: Number(item.total_sales) || 0,
+          y: Number.isFinite(Number(item.total_sales))
+            ? Number(item.total_sales)
+            : null,
         })),
       },
     ];
@@ -209,7 +372,7 @@ const Dashboard = () => {
 
     const exportPayload = {
       exported_at: new Date().toISOString(),
-      last_updated: lastUpdated ? new Date(lastUpdated).toISOString() : null,
+      last_updated: lastUpdated.toISOString(),
       timeframe_days: timeframeDays,
       data: dashboardData,
     };
@@ -220,161 +383,101 @@ const Dashboard = () => {
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
     link.download = `dashboard_snapshot_${Date.now()}.json`;
-    document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+
     URL.revokeObjectURL(url);
   }, [dashboardData, lastUpdated, timeframeDays]);
 
-  const metricCards = [
-    {
-      title: "Revenue YTD",
-      value: formatCurrency(financialSummary.revenue_ytd),
-      caption: "Financial performance",
-      icon: <MonetizationOnOutlinedIcon />,
-      accent: colors.greenAccent[500],
-    },
-    {
-      title: salesPerformance.context_label
-        ? `${salesPerformance.context_label} This Month`
-        : "Sales This Month",
-      value: formatCurrency(salesPerformance.sales_value_this_month),
-      caption: "Current month total",
-      icon: <PointOfSaleOutlinedIcon />,
-      accent: colors.blueAccent[500],
-    },
-    {
-      title: "New Customers",
-      value: formatNumber(salesPerformance.new_customers_this_month),
-      caption: "This month",
-      icon: <PersonAddAlt1OutlinedIcon />,
-      accent: colors.greenAccent[400],
-    },
-    {
-      title: "Active Employees",
-      value: formatNumber(hrmOverview.active_employees),
-      caption: "Current workforce",
-      icon: <GroupOutlinedIcon />,
-      accent: colors.blueAccent[400],
-    },
-  ];
-
-  const cardSx = {
-    borderRadius: "20px",
-    p: 2.2,
-    background:
-      theme.palette.mode === "dark"
-        ? `linear-gradient(180deg, ${alpha(colors.primary[400], 0.96)} 0%, ${alpha(
-            colors.primary[500],
-            0.98
-          )} 100%)`
-        : `linear-gradient(180deg, ${alpha("#ffffff", 0.98)} 0%, ${alpha(
-            colors.primary[100],
-            0.92
-          )} 100%)`,
-    border: `1px solid ${
-      theme.palette.mode === "dark"
-        ? alpha(colors.grey[700], 0.7)
-        : alpha(colors.grey[700], 0.18)
-    }`,
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 14px 32px rgba(0,0,0,0.22)"
-        : "0 14px 32px rgba(15,23,42,0.08)",
-    overflow: "hidden",
-    position: "relative",
-  };
-
-  const sectionTitle = (title, subtitle) => (
-    <Box mb={2}>
-      <Typography
-        variant="h5"
-        fontWeight={800}
-        color={colors.grey[100]}
-        sx={{ letterSpacing: "0.2px" }}
-      >
-        {title}
-      </Typography>
-      {subtitle ? (
-        <Typography
-          variant="body2"
-          sx={{
-            mt: 0.5,
-            color:
-              theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-          }}
-        >
-          {subtitle}
-        </Typography>
-      ) : null}
-    </Box>
+  const metricCards = useMemo(
+    () => [
+      {
+        title: "Revenue YTD",
+        value:
+          financialSummary.revenue_ytd == null
+            ? "—"
+            : formatCurrency(financialSummary.revenue_ytd),
+        caption:
+          financialSummary.revenue_ytd == null
+            ? "No data"
+            : "Financial performance",
+        icon: <MonetizationOnOutlinedIcon />,
+        colorType: "success",
+        route: "/finance/revenue",
+      },
+      {
+        title: salesPerformance.context_label
+          ? `${salesPerformance.context_label} This Month`
+          : "Sales This Month",
+        value:
+          salesPerformance.sales_value_this_month == null
+            ? "—"
+            : formatCurrency(salesPerformance.sales_value_this_month),
+        caption:
+          salesPerformance.sales_value_this_month == null
+            ? "No data"
+            : "Current month total",
+        icon: <PointOfSaleOutlinedIcon />,
+        colorType: "primary",
+        route: "/sales/orders",
+      },
+      {
+        title: "New Customers",
+        value: formatNumber(salesPerformance.new_customers_this_month),
+        caption: "This month",
+        icon: <PersonAddAlt1OutlinedIcon />,
+        colorType: "info",
+        route: "/crm/customers",
+      },
+      {
+        title: "Active Employees",
+        value: formatNumber(hrmOverview.active_employees),
+        caption: "Current workforce",
+        icon: <GroupOutlinedIcon />,
+        colorType: "warning",
+        route: "/hrm/team",
+      },
+    ],
+    [
+      financialSummary,
+      salesPerformance,
+      hrmOverview,
+      formatCurrency,
+      formatNumber,
+    ]
   );
 
-  if (loadingInitial && !dashboardData) {
-    return (
-      <Box
-        m="20px"
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        flexDirection="column"
-        gap={2}
-        height="80vh"
-      >
-        <CircularProgress color="secondary" />
-        <Typography color={colors.grey[200]} fontWeight={600}>
-          Loading dashboard...
-        </Typography>
-      </Box>
-    );
+  if (isLoading) {
+    return <DashboardSkeleton />;
   }
 
-  if (fatalError && !dashboardData) {
+  if (isError && !dashboardData) {
     return (
-      <Box m="20px">
-        <Header title="DASHBOARD" subtitle="Welcome to your dashboard" />
-        <Alert severity="error" sx={{ mt: 3, borderRadius: "14px" }}>
-          Failed to load dashboard data: {fatalError}
-          <Button
-            onClick={() => fetchDashboardData({ refresh: true, timeframe: timeframeDays })}
-            sx={{ ml: 2 }}
-            color="error"
-          >
-            Retry
-          </Button>
+      <Box sx={styles.shell}>
+        <Paper elevation={0} sx={{ ...styles.card, mb: 2.5 }}>
+          <Header title="DASHBOARD" subtitle="Welcome to your dashboard" />
+        </Paper>
+
+        <Alert
+          severity="error"
+          sx={{ mb: 2.5 }}
+          action={
+            <Button onClick={() => refetch()} color="inherit" size="small">
+              Retry
+            </Button>
+          }
+        >
+          Failed to load dashboard data: {error.message}
         </Alert>
       </Box>
     );
   }
 
   return (
-    <Box m={{ xs: "12px", md: "20px" }}>
-      {/* HERO HEADER */}
-      <Paper
-        elevation={0}
-        sx={{
-          ...cardSx,
-          p: { xs: 2.2, md: 3 },
-          mb: 2.5,
-          background:
-            theme.palette.mode === "dark"
-              ? `linear-gradient(135deg, ${colors.primary[400]} 0%, ${colors.blueAccent[900]} 100%)`
-              : `linear-gradient(135deg, ${colors.blueAccent[800]} 0%, ${colors.blueAccent[600]} 100%)`,
-          color: "#fff",
-        }}
-      >
-        <Box
-          sx={{
-            position: "absolute",
-            inset: 0,
-            opacity: 0.08,
-            backgroundImage:
-              "radial-gradient(circle at 15% 15%, #fff 0, transparent 20%), radial-gradient(circle at 85% 25%, #fff 0, transparent 18%), radial-gradient(circle at 70% 80%, #fff 0, transparent 22%)",
-          }}
-        />
-
+    <Box sx={styles.shell}>
+      <Paper elevation={0} sx={{ ...styles.card, ...styles.heroCard }}>
         <Stack
           direction={{ xs: "column", lg: "row" }}
           justifyContent="space-between"
@@ -385,51 +488,32 @@ const Dashboard = () => {
           <Box>
             <Header
               title="DASHBOARD"
-              subtitle={`Welcome back. Showing business performance for the last ${timeframeDays} days.`}
+              subtitle={`Performance overview for last ${timeframeDays} days`}
             />
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={1.5}>
+
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={1}>
               <Chip
-                icon={<AccessTimeOutlinedIcon />}
-                label={`Last updated: ${formatDateTime(lastUpdated)}`}
-                sx={{
-                  backgroundColor: "rgba(255,255,255,0.12)",
-                  color: "#fff",
-                  "& .MuiChip-icon": { color: "#fff" },
-                }}
+                icon={<AccessTimeOutlinedIcon sx={{ fontSize: 14 }} />}
+                size="small"
+                label={`Updated ${formatDateTime(lastUpdated)}`}
+                sx={styles.heroChip}
               />
-              <Chip
-                label={warning ? "Partial Data" : "Live Data"}
-                sx={{
-                  backgroundColor: warning
-                    ? "rgba(255, 183, 77, 0.18)"
-                    : "rgba(76, 206, 172, 0.18)",
-                  color: "#fff",
-                  fontWeight: 700,
-                }}
-              />
+
+              {warning && (
+                <Chip size="small" label="Partial Data" sx={styles.heroWarningChip} />
+              )}
             </Stack>
           </Box>
 
           <Stack
             direction={{ xs: "column", sm: "row" }}
-            spacing={1.2}
+            spacing={1}
             alignItems={{ xs: "stretch", sm: "center" }}
           >
-            <FormControl size="small" sx={{ minWidth: 140 }}>
+            <FormControl size="small" sx={styles.heroSelect}>
               <Select
                 value={timeframeDays}
-                onChange={(e) => setTimeframeDays(Number(e.target.value))}
-                sx={{
-                  borderRadius: "12px",
-                  color: "#fff",
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "rgba(255,255,255,0.18)",
-                  },
-                  "& .MuiSvgIcon-root": {
-                    color: "#fff",
-                  },
-                }}
+                onChange={(event) => setTimeframeDays(Number(event.target.value))}
               >
                 <MenuItem value={7}>Last 7 days</MenuItem>
                 <MenuItem value={30}>Last 30 days</MenuItem>
@@ -441,503 +525,272 @@ const Dashboard = () => {
             <Tooltip title="Refresh dashboard">
               <span>
                 <IconButton
-                  onClick={() => fetchDashboardData({ refresh: true, timeframe: timeframeDays })}
-                  disabled={refreshing}
-                  sx={{
-                    borderRadius: "12px",
-                    backgroundColor: "rgba(255,255,255,0.08)",
-                    color: "#fff",
-                    "&:hover": {
-                      backgroundColor: "rgba(255,255,255,0.14)",
-                    },
+                  onClick={() => {
+                    queryClient.invalidateQueries({
+                      queryKey: ["dashboard", timeframeDays],
+                    });
+                    refetch();
                   }}
+                  disabled={isFetching}
+                  sx={styles.heroIconButton}
                 >
-                  {refreshing ? <CircularProgress size={22} color="inherit" /> : <RefreshRoundedIcon />}
+                  {isFetching ? (
+                    <CircularProgress size={18} color="inherit" />
+                  ) : (
+                    <RefreshRoundedIcon fontSize="small" />
+                  )}
                 </IconButton>
               </span>
             </Tooltip>
 
             <Button
               onClick={handleDownloadSnapshot}
-              startIcon={<DownloadOutlinedIcon />}
+              startIcon={<DownloadOutlinedIcon fontSize="small" />}
               variant="contained"
-              sx={{
-                borderRadius: "12px",
-                px: 2,
-                py: 1.1,
-                textTransform: "none",
-                fontWeight: 800,
-                backgroundColor: "rgba(255,255,255,0.14)",
-                color: "#fff",
-                boxShadow: "none",
-                "&:hover": {
-                  backgroundColor: "rgba(255,255,255,0.22)",
-                  boxShadow: "none",
-                },
-              }}
+              sx={styles.heroButton}
             >
-              Download Snapshot
+              Export
             </Button>
           </Stack>
         </Stack>
 
-        {refreshing && (
+        {isFetching && !isLoading && (
           <LinearProgress
-            color="secondary"
             sx={{
-              mt: 2,
-              borderRadius: "999px",
-              height: 6,
-              backgroundColor: "rgba(255,255,255,0.12)",
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              backgroundColor: "rgba(255,255,255,0.1)",
+              "& .MuiLinearProgress-bar": {
+                backgroundColor: "#fff",
+              },
             }}
           />
         )}
       </Paper>
 
-      {/* ALERTS */}
       {warning && (
-        <Alert severity="warning" sx={{ mb: 2.5, borderRadius: "14px" }}>
+        <Alert severity="warning" sx={{ mb: 2.5 }}>
           {warning}
         </Alert>
       )}
 
-      {/* KPI CARDS */}
+      {isError && dashboardData && (
+        <Alert severity="info" sx={{ mb: 2.5 }}>
+          Background refresh failed. Showing cached data.
+        </Alert>
+      )}
+
       <Box
-        display="grid"
-        gridTemplateColumns={{ xs: "1fr", sm: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }}
-        gap="20px"
-        mb={2.5}
-      >
-        {metricCards.map((card) => (
-          <Paper key={card.title} elevation={0} sx={cardSx}>
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
-              <Box
-                sx={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: "16px",
-                  display: "grid",
-                  placeItems: "center",
-                  backgroundColor: alpha(card.accent, 0.12),
-                  color: card.accent,
-                }}
-              >
-                {card.icon}
-              </Box>
-
-              <Chip
-                label={card.caption}
-                size="small"
-                sx={{
-                  borderRadius: "10px",
-                  fontWeight: 700,
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? alpha(colors.grey[100], 0.06)
-                      : alpha(colors.grey[900], 0.05),
-                  color:
-                    theme.palette.mode === "dark" ? colors.grey[200] : colors.grey[600],
-                }}
-              />
-            </Stack>
-
-            <Typography
-              variant="h3"
-              fontWeight={800}
-              color={colors.grey[100]}
-              sx={{ lineHeight: 1.2 }}
-            >
-              {card.value}
-            </Typography>
-
-            <Typography
-              variant="body1"
-              sx={{
-                mt: 0.8,
-                color:
-                  theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-                fontWeight: 600,
-              }}
-            >
-              {card.title}
-            </Typography>
-          </Paper>
-        ))}
-      </Box>
-
-      {/* MAIN CONTENT */}
-      <Box
-        display="grid"
-        gridTemplateColumns={{ xs: "1fr", lg: "repeat(12, 1fr)" }}
-        gap="20px"
-      >
-        {/* SALES TREND */}
-        <Paper
-          elevation={0}
-          sx={{
-            ...cardSx,
-            gridColumn: { xs: "span 1", lg: "span 8" },
-            minHeight: 420,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            justifyContent="space-between"
-            alignItems={{ xs: "flex-start", sm: "center" }}
-            spacing={1.5}
-            mb={1}
-          >
-            <Box>
-              {sectionTitle(
-                salesPerformance.context_label
-                  ? `${salesPerformance.context_label} Trend`
-                  : "Sales Trend",
-                "Monthly sales trend for the most recent 6-month period"
-              )}
-            </Box>
-
-            <Stack alignItems={{ xs: "flex-start", sm: "flex-end" }}>
-              <Typography variant="h4" fontWeight={800} color={colors.greenAccent[500]}>
-                {formatCurrency(salesPerformance.sales_value_this_month)}
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color:
-                    theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-                }}
-              >
-                Current month total
-              </Typography>
-            </Stack>
-          </Stack>
-
-          <Divider sx={{ mb: 1.5, borderColor: alpha(colors.grey[500], 0.15) }} />
-
-          <Box flex="1 1 auto" minHeight="280px" mt={1}>
-            <LineChart isDashboard={true} data={salesTrendForChart} />
-          </Box>
-        </Paper>
-
-        {/* RECENT SALES */}
-        <Paper
-          elevation={0}
-          sx={{
-            ...cardSx,
-            gridColumn: { xs: "span 1", lg: "span 4" },
-            minHeight: 420,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {sectionTitle("Recent Sales", "Latest transactions and order activity")}
-
-          <Stack spacing={1.2} sx={{ overflow: "auto", pr: 0.5 }}>
-            {recentSales.slice(0, 8).map((sale, index) => (
-              <Box
-                key={sale.id || `sale-${index}`}
-                sx={{
-                  p: 1.4,
-                  borderRadius: "14px",
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? alpha(colors.primary[500], 0.5)
-                      : alpha(colors.primary[200], 0.85),
-                  border: `1px solid ${
-                    theme.palette.mode === "dark"
-                      ? alpha(colors.grey[700], 0.5)
-                      : alpha(colors.grey[700], 0.12)
-                  }`,
-                }}
-              >
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-                  <Box minWidth={0}>
-                    <Typography
-                      variant="body1"
-                      fontWeight={700}
-                      color={colors.grey[100]}
-                      noWrap
-                    >
-                      {sale.customer?.name || `Order #${sale.order_number || "N/A"}`}
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        mt: 0.3,
-                        color:
-                          theme.palette.mode === "dark"
-                            ? colors.grey[300]
-                            : colors.grey[500],
-                      }}
-                    >
-                      {sale.order_date
-                        ? new Date(sale.order_date).toLocaleDateString()
-                        : "No date"}
-                    </Typography>
-                  </Box>
-
-                  <Chip
-                    label={formatCurrency(sale.total_amount)}
-                    sx={{
-                      fontWeight: 800,
-                      backgroundColor: alpha(colors.greenAccent[500], 0.14),
-                      color: colors.greenAccent[500],
-                    }}
-                  />
-                </Stack>
-              </Box>
-            ))}
-
-            {recentSales.length === 0 && (
-              <Box
-                sx={{
-                  py: 6,
-                  textAlign: "center",
-                  color:
-                    theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-                }}
-              >
-                <Typography fontWeight={600}>No recent sales activity.</Typography>
-              </Box>
-            )}
-          </Stack>
-        </Paper>
-
-        {/* INVENTORY */}
-        <Paper
-          elevation={0}
-          sx={{
-            ...cardSx,
-            gridColumn: { xs: "span 1", lg: "span 4" },
-            minHeight: 240,
-          }}
-        >
-          <Stack direction="row" spacing={1.2} alignItems="center" mb={2}>
-            <Box
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: "14px",
-                display: "grid",
-                placeItems: "center",
-                backgroundColor: alpha(colors.greenAccent[500], 0.12),
-                color: colors.greenAccent[500],
-              }}
-            >
-              <Inventory2OutlinedIcon />
-            </Box>
-            <Box>
-              <Typography variant="h5" fontWeight={800} color={colors.grey[100]}>
-                Inventory Status
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color:
-                    theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-                }}
-              >
-                Stock availability and current inventory value
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Stack spacing={1.6}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color={colors.grey[100]} fontWeight={600}>
-                Low Stock Items
-              </Typography>
-              <Chip
-                label={formatNumber(inventoryStatus.products_low_on_stock)}
-                sx={{
-                  fontWeight: 800,
-                  backgroundColor: alpha(colors.greenAccent[500], 0.14),
-                  color: colors.greenAccent[500],
-                }}
-              />
-            </Stack>
-
-            <Divider sx={{ borderColor: alpha(colors.grey[500], 0.15) }} />
-
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color={colors.grey[100]} fontWeight={600}>
-                Total Inventory Value
-              </Typography>
-              <Typography color={colors.greenAccent[500]} fontWeight={800}>
-                {formatCurrency(inventoryStatus.total_inventory_value)}
-              </Typography>
-            </Stack>
-          </Stack>
-        </Paper>
-
-        {/* PURCHASING */}
-        <Paper
-          elevation={0}
-          sx={{
-            ...cardSx,
-            gridColumn: { xs: "span 1", lg: "span 4" },
-            minHeight: 240,
-          }}
-        >
-          <Stack direction="row" spacing={1.2} alignItems="center" mb={2}>
-            <Box
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: "14px",
-                display: "grid",
-                placeItems: "center",
-                backgroundColor: alpha(colors.blueAccent[500], 0.12),
-                color: colors.blueAccent[500],
-              }}
-            >
-              <ShoppingCartCheckoutOutlinedIcon />
-            </Box>
-            <Box>
-              <Typography variant="h5" fontWeight={800} color={colors.grey[100]}>
-                Purchasing
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color:
-                    theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-                }}
-              >
-                Open purchase orders and total procurement value
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Stack spacing={1.6}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color={colors.grey[100]} fontWeight={600}>
-                Open POs
-              </Typography>
-              <Chip
-                label={formatNumber(purchasingOverview.open_purchase_orders_count)}
-                sx={{
-                  fontWeight: 800,
-                  backgroundColor: alpha(colors.blueAccent[500], 0.14),
-                  color: colors.blueAccent[500],
-                }}
-              />
-            </Stack>
-
-            <Divider sx={{ borderColor: alpha(colors.grey[500], 0.15) }} />
-
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color={colors.grey[100]} fontWeight={600}>
-                Open PO Value
-              </Typography>
-              <Typography color={colors.greenAccent[500]} fontWeight={800}>
-                {formatCurrency(purchasingOverview.open_purchase_orders_value)}
-              </Typography>
-            </Stack>
-          </Stack>
-        </Paper>
-
-        {/* FINANCIAL HEALTH */}
-        <Paper
-          elevation={0}
-          sx={{
-            ...cardSx,
-            gridColumn: { xs: "span 1", lg: "span 4" },
-            minHeight: 240,
-          }}
-        >
-          <Stack direction="row" spacing={1.2} alignItems="center" mb={2}>
-            <Box
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: "14px",
-                display: "grid",
-                placeItems: "center",
-                backgroundColor: alpha(colors.greenAccent[500], 0.12),
-                color: colors.greenAccent[500],
-              }}
-            >
-              <AccountBalanceWalletOutlinedIcon />
-            </Box>
-            <Box>
-              <Typography variant="h5" fontWeight={800} color={colors.grey[100]}>
-                Financial Health
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color:
-                    theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500],
-                }}
-              >
-                Profitability and liquidity indicators
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Stack spacing={1.6}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color={colors.grey[100]} fontWeight={600}>
-                Profit Margin (YTD)
-              </Typography>
-              <Chip
-                icon={<TrendingUpOutlinedIcon />}
-                label={formatPercent(financialSummary.profit_margin_ytd)}
-                sx={{
-                  fontWeight: 800,
-                  backgroundColor: alpha(colors.greenAccent[500], 0.14),
-                  color: colors.greenAccent[500],
-                }}
-              />
-            </Stack>
-
-            <Divider sx={{ borderColor: alpha(colors.grey[500], 0.15) }} />
-
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color={colors.grey[100]} fontWeight={600}>
-                Cash Balance
-              </Typography>
-              <Typography color={colors.greenAccent[500]} fontWeight={800}>
-                {formatCurrency(financialSummary.cash_balance)}
-              </Typography>
-            </Stack>
-          </Stack>
-        </Paper>
-      </Box>
-
-      {/* FOOTER */}
-      <Paper
-        elevation={0}
         sx={{
-          ...cardSx,
-          mt: 2.5,
-          p: 1.8,
+          opacity: isFetching && !isLoading ? 0.65 : 1,
+          transition: "opacity 160ms ease",
+          pointerEvents: isFetching ? "none" : "auto",
         }}
       >
-        <Stack
-          direction={{ xs: "column", md: "row" }}
-          justifyContent="space-between"
-          alignItems={{ xs: "flex-start", md: "center" }}
-          spacing={1}
+        <Box
+          display="grid"
+          gridTemplateColumns={{
+            xs: "1fr",
+            sm: "repeat(2, 1fr)",
+            xl: "repeat(4, 1fr)",
+          }}
+          gap={2}
+          mb={2.5}
         >
-          <Stack direction="row" spacing={1} alignItems="center">
-            <AccessTimeOutlinedIcon sx={{ color: colors.grey[400], fontSize: 18 }} />
-            <Typography variant="body2" color={colors.grey[400]}>
-              Last updated: {formatDateTime(lastUpdated)}
-            </Typography>
-          </Stack>
+          {metricCards.map((card) => (
+            <MetricCard
+              key={card.title}
+              card={card}
+              onClick={() => navigate(card.route)}
+            />
+          ))}
+        </Box>
 
-          <Stack direction="row" spacing={1} alignItems="center">
-            <NorthEastOutlinedIcon sx={{ color: colors.greenAccent[500], fontSize: 18 }} />
-            <Typography variant="body2" color={colors.grey[400]}>
-              Dashboard reflects backend-generated business summary for the selected timeframe.
-            </Typography>
-          </Stack>
-        </Stack>
-      </Paper>
+        <Box
+          display="grid"
+          gridTemplateColumns={{ xs: "1fr", lg: "repeat(12, 1fr)" }}
+          gap={2}
+        >
+          <Paper elevation={0} sx={{ ...styles.card, ...styles.chartCard }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="space-between"
+              alignItems={{ xs: "flex-start", sm: "center" }}
+              spacing={1.5}
+              mb={1}
+            >
+              <SectionTitle
+                title={
+                  salesPerformance.context_label
+                    ? `${salesPerformance.context_label} Trend`
+                    : "Sales Trend"
+                }
+                subtitle="Monthly sales trend for the most recent 6-month period"
+              />
+
+              <Stack alignItems={{ xs: "flex-start", sm: "flex-end" }}>
+                <Typography
+                  sx={{
+                    fontSize: "1rem",
+                    fontWeight: 500,
+                    color: "text.primary",
+                    letterSpacing: "-0.015em",
+                  }}
+                >
+                  {formatCurrency(salesPerformance.sales_value_this_month)}
+                </Typography>
+                <Typography
+                  sx={{
+                    fontSize: "0.7rem",
+                    color: "text.secondary",
+                    fontWeight: 300,
+                  }}
+                >
+                  Current month total
+                </Typography>
+              </Stack>
+            </Stack>
+
+            <Divider sx={{ mb: 1 }} />
+
+            <Box flex="1 1 auto" minHeight="260px" mt={1} sx={{ px: 0.5 }}>
+              {salesTrendForChart[0]?.data?.length > 0 ? (
+                <LineChart isDashboard data={salesTrendForChart} />
+              ) : (
+                <Box
+                  display="flex"
+                  height="100%"
+                  alignItems="center"
+                  justifyContent="center"
+                >
+                  <Typography sx={styles.emptyText}>
+                    No trend data available for this timeframe.
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Paper>
+
+          <Paper elevation={0} sx={{ ...styles.card, ...styles.sideCard }}>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="flex-start"
+              mb={1.25}
+            >
+              <SectionTitle
+                title="Recent Sales"
+                subtitle="Latest transactions and order activity"
+              />
+
+              <Button
+                size="small"
+                onClick={() => navigate("/sales/orders")}
+                sx={{ textTransform: "none", fontSize: "0.7rem" }}
+              >
+                View All
+              </Button>
+            </Stack>
+
+            <Stack spacing={1} sx={{ overflow: "auto", pr: 0.5, mt: 0.5 }}>
+              {recentSales.slice(0, 8).map((sale, index) => (
+                <Box
+                  key={sale.id || `sale-${index}`}
+                  onClick={() => navigate(`/sales/orders/${sale.id}`)}
+                  sx={styles.saleItem}
+                >
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="center"
+                    spacing={1.5}
+                  >
+                    <Box minWidth={0}>
+                      <Typography sx={styles.salePrimary} noWrap>
+                        {sale.customer?.name ||
+                          `Order #${sale.order_number || "N/A"}`}
+                      </Typography>
+
+                      <Typography sx={styles.saleSecondary}>
+                        {sale.order_date
+                          ? new Date(sale.order_date).toLocaleDateString()
+                          : "No date"}
+                      </Typography>
+                    </Box>
+
+                    <Typography sx={styles.saleAmount}>
+                      {formatCurrency(sale.total_amount)}
+                    </Typography>
+                  </Stack>
+                </Box>
+              ))}
+
+              {recentSales.length === 0 && (
+                <Box sx={{ py: 5, textAlign: "center" }}>
+                  <Typography sx={styles.emptyText}>
+                    No recent sales activity.
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          </Paper>
+
+          <ModuleCard
+            route="/inventory"
+            icon={<Inventory2OutlinedIcon fontSize="small" />}
+            title="Inventory Status"
+            subtitle="Stock availability and value"
+            rows={[
+              {
+                label: "Low Stock Items",
+                value: formatNumber(inventoryStatus.products_low_on_stock),
+              },
+              {
+                label: "Total Value",
+                value: formatCurrency(inventoryStatus.total_inventory_value),
+              },
+            ]}
+          />
+
+          <ModuleCard
+            route="/purchasing"
+            icon={<ShoppingCartCheckoutOutlinedIcon fontSize="small" />}
+            title="Purchasing"
+            subtitle="Procurement overview"
+            rows={[
+              {
+                label: "Open POs",
+                value: formatNumber(purchasingOverview.open_purchase_orders_count),
+              },
+              {
+                label: "Open PO Value",
+                value: formatCurrency(purchasingOverview.open_purchase_orders_value),
+              },
+            ]}
+          />
+
+          <ModuleCard
+            route="/finance"
+            icon={<AccountBalanceWalletOutlinedIcon fontSize="small" />}
+            title="Financial Health"
+            subtitle="Profitability indicators"
+            rows={[
+              {
+                label: "Profit Margin (YTD)",
+                value: formatPercent(financialSummary.profit_margin_ytd),
+                color: theme.palette.success.main,
+              },
+              {
+                label: "Cash Balance",
+                value: formatCurrency(financialSummary.cash_balance),
+              },
+            ]}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 };
