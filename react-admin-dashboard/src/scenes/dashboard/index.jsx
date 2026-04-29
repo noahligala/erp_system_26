@@ -20,10 +20,9 @@ import {
 import { alpha } from "@mui/material/styles";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../api/AuthProvider";
-import Header from "../../components/Header";
 import LineChart from "../../components/LineChart";
 
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
@@ -36,6 +35,10 @@ import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import ShoppingCartCheckoutOutlinedIcon from "@mui/icons-material/ShoppingCartCheckoutOutlined";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 import AccessTimeOutlinedIcon from "@mui/icons-material/AccessTimeOutlined";
+import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
 
 const getMetricColor = (theme, type) => {
   switch (type) {
@@ -52,6 +55,18 @@ const getMetricColor = (theme, type) => {
   }
 };
 
+const getAccentVars = (color) => ({
+  "--accent": color,
+  "--accent-bg": alpha(color, 0.1),
+  "--accent-border": alpha(color, 0.16),
+  "--accent-border-strong": alpha(color, 0.28),
+});
+
+const safeNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
 const DashboardSkeleton = () => {
   const theme = useTheme();
   const styles = theme.dashboard;
@@ -61,23 +76,25 @@ const DashboardSkeleton = () => {
       <Skeleton
         variant="rounded"
         width="100%"
-        height={112}
+        height={140}
         sx={{ mb: 2.5, borderRadius: "14px" }}
       />
 
       <Box
-        display="grid"
-        gridTemplateColumns={{
-          xs: "1fr",
-          sm: "repeat(2, 1fr)",
-          xl: "repeat(4, 1fr)",
+        sx={{
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "1fr",
+            sm: "repeat(2, minmax(0, 1fr))",
+            xl: "repeat(4, minmax(0, 1fr))",
+          },
+          gap: { xs: 1.5, md: 2 },
+          mb: 2.5,
         }}
-        gap={2}
-        mb={2.5}
       >
-        {[1, 2, 3, 4].map((i) => (
+        {[1, 2, 3, 4].map((item) => (
           <Skeleton
-            key={i}
+            key={item}
             variant="rounded"
             height={132}
             sx={{ borderRadius: "14px" }}
@@ -86,9 +103,11 @@ const DashboardSkeleton = () => {
       </Box>
 
       <Box
-        display="grid"
-        gridTemplateColumns={{ xs: "1fr", lg: "repeat(12, 1fr)" }}
-        gap={2}
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", lg: "repeat(12, minmax(0, 1fr))" },
+          gap: { xs: 1.5, md: 2 },
+        }}
       >
         <Skeleton
           variant="rounded"
@@ -98,6 +117,7 @@ const DashboardSkeleton = () => {
             borderRadius: "14px",
           }}
         />
+
         <Skeleton
           variant="rounded"
           height={380}
@@ -111,14 +131,102 @@ const DashboardSkeleton = () => {
   );
 };
 
-const SectionTitle = ({ title, subtitle }) => {
+const SectionTitle = ({ title, subtitle, icon, action }) => {
   const theme = useTheme();
   const styles = theme.dashboard;
 
   return (
-    <Box>
-      <Typography sx={styles.sectionTitle}>{title}</Typography>
-      {subtitle && <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>}
+    <Stack
+      direction={{ xs: "column", sm: "row" }}
+      justifyContent="space-between"
+      alignItems={{ xs: "flex-start", sm: "center" }}
+      spacing={1.25}
+      mb={1.25}
+    >
+      <Stack direction="row" spacing={1.1} alignItems="flex-start" minWidth={0}>
+        {icon && <Box sx={{ mt: 0.1, flexShrink: 0 }}>{icon}</Box>}
+
+        <Box minWidth={0}>
+          <Typography sx={styles.sectionTitle}>{title}</Typography>
+
+          {subtitle && (
+            <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>
+          )}
+        </Box>
+      </Stack>
+
+      {action}
+    </Stack>
+  );
+};
+
+const AccentIcon = ({ icon, color, small = false }) => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+
+  return (
+    <Box
+      sx={small ? styles.iconBoxSmall : styles.iconBox}
+      style={getAccentVars(color)}
+    >
+      {icon}
+    </Box>
+  );
+};
+
+const EmptyState = ({ title, subtitle }) => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+
+  return (
+    <Box
+      sx={{
+        height: "100%",
+        minHeight: 180,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        px: 2,
+        textAlign: "center",
+      }}
+    >
+      <Box>
+        <Box
+          sx={{
+            width: 38,
+            height: 38,
+            mx: "auto",
+            mb: 1.25,
+            borderRadius: "12px",
+            border: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
+            bgcolor: alpha(theme.palette.primary.main, 0.045),
+          }}
+        />
+
+        <Typography
+          sx={{
+            fontSize: "0.8rem",
+            fontWeight: 500,
+            color: "text.primary",
+          }}
+        >
+          {title}
+        </Typography>
+
+        {subtitle && (
+          <Typography
+            sx={{
+              mt: 0.4,
+              fontSize: "0.7rem",
+              color: "text.secondary",
+              fontWeight: 400,
+              lineHeight: 1.55,
+            }}
+          >
+            {subtitle}
+          </Typography>
+        )}
+      </Box>
     </Box>
   );
 };
@@ -135,31 +243,25 @@ const MetricCard = ({ card, onClick }) => {
       sx={{
         ...styles.card,
         ...styles.metricCard,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
       }}
-      style={{
-        "--accent": color,
-        "--accent-border-strong": alpha(color, 0.28),
-      }}
+      style={getAccentVars(color)}
     >
       <Stack
         direction="row"
         justifyContent="space-between"
         alignItems="flex-start"
+        spacing={1.25}
         mb={1.75}
       >
-        <Box
-          sx={styles.iconBox}
-          style={{
-            "--accent": color,
-            "--accent-bg": alpha(color, 0.1),
-            "--accent-border": alpha(color, 0.16),
-          }}
-        >
-          {card.icon}
-        </Box>
+        <AccentIcon icon={card.icon} color={color} />
 
         <Chip
           label={card.caption}
+          size="small"
           sx={{
             fontWeight: 400,
             fontSize: "0.64rem",
@@ -167,20 +269,69 @@ const MetricCard = ({ card, onClick }) => {
             borderRadius: "999px",
             backgroundColor: alpha(color, 0.08),
             color,
+            maxWidth: 130,
           }}
         />
       </Stack>
 
-      <Typography sx={styles.metricValue}>{card.value}</Typography>
-      <Typography sx={styles.metricTitle}>{card.title}</Typography>
+      <Box>
+        <Typography sx={styles.metricValue}>{card.value}</Typography>
+        <Typography sx={styles.metricTitle}>{card.title}</Typography>
+
+        {card.helper && (
+          <Typography
+            sx={{
+              mt: 0.45,
+              color: "text.disabled",
+              fontSize: "0.66rem",
+              fontWeight: 400,
+            }}
+          >
+            {card.helper}
+          </Typography>
+        )}
+      </Box>
     </Paper>
   );
 };
 
-const ModuleCard = ({ icon, title, subtitle, rows, route }) => {
+const HeroSummaryItem = ({ label, value, color }) => (
+  <Box
+    sx={{
+      minWidth: 0,
+      py: 0.35,
+    }}
+  >
+    <Typography
+      sx={{
+        fontSize: "0.66rem",
+        color: "rgba(255,255,255,0.72)",
+        fontWeight: 400,
+      }}
+    >
+      {label}
+    </Typography>
+
+    <Typography
+      sx={{
+        mt: 0.25,
+        color: "#fff",
+        fontSize: { xs: "0.84rem", md: "0.92rem" },
+        fontWeight: 500,
+        lineHeight: 1.25,
+      }}
+      noWrap
+    >
+      {value}
+    </Typography>
+  </Box>
+);
+
+const ModuleCard = ({ icon, title, subtitle, rows, route, color }) => {
   const theme = useTheme();
   const styles = theme.dashboard;
   const navigate = useNavigate();
+  const accent = color || theme.palette.primary.main;
 
   return (
     <Paper
@@ -189,39 +340,98 @@ const ModuleCard = ({ icon, title, subtitle, rows, route }) => {
       sx={{
         ...styles.card,
         ...styles.moduleCard,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <Stack direction="row" spacing={1.25} alignItems="center" mb={2}>
-        <Box sx={styles.iconBox(theme.palette.primary.main, 36, "10px")}>
-          {icon}
+        <AccentIcon icon={icon} color={accent} small />
+
+        <Box minWidth={0}>
+          <Typography sx={styles.moduleTitle} noWrap>
+            {title}
+          </Typography>
+          <Typography sx={styles.moduleSubtitle} noWrap>
+            {subtitle}
+          </Typography>
         </Box>
 
-        <Box>
-          <Typography sx={styles.moduleTitle}>{title}</Typography>
-          <Typography sx={styles.moduleSubtitle}>{subtitle}</Typography>
-        </Box>
+        <ArrowForwardRoundedIcon
+          sx={{
+            ml: "auto",
+            color: "text.disabled",
+            fontSize: 18,
+            flexShrink: 0,
+          }}
+        />
       </Stack>
 
-      <Stack spacing={1.5}>
+      <Stack spacing={1.35} sx={{ mt: "auto" }}>
         {rows.map((row, index) => (
           <Box key={row.label}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography sx={styles.moduleRowLabel}>{row.label}</Typography>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              spacing={1.5}
+            >
+              <Typography sx={styles.moduleRowLabel} noWrap>
+                {row.label}
+              </Typography>
+
               <Typography
                 sx={{
                   ...styles.moduleRowValue,
                   color: row.color || "text.primary",
+                  textAlign: "right",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {row.value}
               </Typography>
             </Stack>
 
-            {index < rows.length - 1 && <Divider sx={{ mt: 1.5 }} />}
+            {index < rows.length - 1 && <Divider sx={{ mt: 1.35 }} />}
           </Box>
         ))}
       </Stack>
     </Paper>
+  );
+};
+
+const RecentSaleItem = ({ sale, onClick, formatCurrency }) => {
+  const theme = useTheme();
+  const styles = theme.dashboard;
+
+  return (
+    <Box onClick={onClick} sx={styles.saleItem}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
+        <Stack direction="row" spacing={1.1} alignItems="center" minWidth={0}>
+          <AccentIcon
+            small
+            icon={<ReceiptLongOutlinedIcon fontSize="small" />}
+            color={theme.palette.primary.main}
+          />
+
+          <Box minWidth={0}>
+            <Typography sx={styles.salePrimary} noWrap>
+              {sale.customer?.name || `Order #${sale.order_number || "N/A"}`}
+            </Typography>
+
+            <Typography sx={styles.saleSecondary}>
+              {sale.order_date
+                ? new Date(sale.order_date).toLocaleDateString()
+                : "No date"}
+            </Typography>
+          </Box>
+        </Stack>
+
+        <Typography sx={styles.saleAmount}>
+          {formatCurrency(sale.total_amount)}
+        </Typography>
+      </Stack>
+    </Box>
   );
 };
 
@@ -238,30 +448,37 @@ const Dashboard = () => {
 
   const formatCurrency = useCallback(
     (value) => {
-      if (value == null) return "—";
+      const number = safeNumber(value);
+      if (number == null) return "—";
 
       return new Intl.NumberFormat(undefined, {
         style: "currency",
         currency: orgCurrency,
-      }).format(value);
+        maximumFractionDigits: 0,
+      }).format(number);
     },
     [orgCurrency]
   );
 
   const formatNumber = useCallback((value) => {
-    if (value == null) return "—";
-    return new Intl.NumberFormat().format(value);
+    const number = safeNumber(value);
+    if (number == null) return "—";
+
+    return new Intl.NumberFormat().format(number);
   }, []);
 
   const formatPercent = useCallback((value) => {
-    if (value == null) return "—";
-    return `${Number(value).toFixed(2)}%`;
+    const number = safeNumber(value);
+    if (number == null) return "—";
+
+    return `${number.toFixed(2)}%`;
   }, []);
 
   const formatDateTime = useCallback((dateValue) => {
     if (!dateValue) return "—";
 
     const dt = new Date(dateValue);
+
     if (!Number.isFinite(dt.getTime())) return "—";
 
     return new Intl.DateTimeFormat(undefined, {
@@ -271,7 +488,7 @@ const Dashboard = () => {
   }, []);
 
   const fetchDashboard = async ({ queryKey, signal }) => {
-    const [_key, timeframe] = queryKey;
+    const [, timeframe] = queryKey;
 
     const response = await apiClient.get("/dashboard", {
       params: { timeframe },
@@ -297,6 +514,7 @@ const Dashboard = () => {
     queryFn: fetchDashboard,
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
@@ -361,7 +579,7 @@ const Dashboard = () => {
           x: item.month || "N/A",
           y: Number.isFinite(Number(item.total_sales))
             ? Number(item.total_sales)
-            : null,
+            : 0,
         })),
       },
     ];
@@ -391,18 +609,21 @@ const Dashboard = () => {
     URL.revokeObjectURL(url);
   }, [dashboardData, lastUpdated, timeframeDays]);
 
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ["dashboard", timeframeDays],
+    });
+
+    refetch();
+  }, [queryClient, refetch, timeframeDays]);
+
   const metricCards = useMemo(
     () => [
       {
         title: "Revenue YTD",
-        value:
-          financialSummary.revenue_ytd == null
-            ? "—"
-            : formatCurrency(financialSummary.revenue_ytd),
-        caption:
-          financialSummary.revenue_ytd == null
-            ? "No data"
-            : "Financial performance",
+        value: formatCurrency(financialSummary.revenue_ytd),
+        caption: financialSummary.revenue_ytd == null ? "No data" : "YTD",
+        helper: "Financial performance",
         icon: <MonetizationOnOutlinedIcon />,
         colorType: "success",
         route: "/finance/revenue",
@@ -411,14 +632,9 @@ const Dashboard = () => {
         title: salesPerformance.context_label
           ? `${salesPerformance.context_label} This Month`
           : "Sales This Month",
-        value:
-          salesPerformance.sales_value_this_month == null
-            ? "—"
-            : formatCurrency(salesPerformance.sales_value_this_month),
-        caption:
-          salesPerformance.sales_value_this_month == null
-            ? "No data"
-            : "Current month total",
+        value: formatCurrency(salesPerformance.sales_value_this_month),
+        caption: salesPerformance.sales_value_this_month == null ? "No data" : "Month",
+        helper: "Current month total",
         icon: <PointOfSaleOutlinedIcon />,
         colorType: "primary",
         route: "/sales/orders",
@@ -427,6 +643,7 @@ const Dashboard = () => {
         title: "New Customers",
         value: formatNumber(salesPerformance.new_customers_this_month),
         caption: "This month",
+        helper: "Customer growth",
         icon: <PersonAddAlt1OutlinedIcon />,
         colorType: "info",
         route: "/crm/customers",
@@ -434,7 +651,8 @@ const Dashboard = () => {
       {
         title: "Active Employees",
         value: formatNumber(hrmOverview.active_employees),
-        caption: "Current workforce",
+        caption: "Live",
+        helper: "Current workforce",
         icon: <GroupOutlinedIcon />,
         colorType: "warning",
         route: "/hrm/team",
@@ -449,6 +667,28 @@ const Dashboard = () => {
     ]
   );
 
+  const heroStats = useMemo(
+    () => [
+      {
+        label: "Revenue YTD",
+        value: formatCurrency(financialSummary.revenue_ytd),
+      },
+      {
+        label: "Cash Balance",
+        value: formatCurrency(financialSummary.cash_balance),
+      },
+      {
+        label: "Profit Margin",
+        value: formatPercent(financialSummary.profit_margin_ytd),
+      },
+      {
+        label: "Inventory Value",
+        value: formatCurrency(inventoryStatus.total_inventory_value),
+      },
+    ],
+    [financialSummary, inventoryStatus, formatCurrency, formatPercent]
+  );
+
   if (isLoading) {
     return <DashboardSkeleton />;
   }
@@ -457,7 +697,22 @@ const Dashboard = () => {
     return (
       <Box sx={styles.shell}>
         <Paper elevation={0} sx={{ ...styles.card, mb: 2.5 }}>
-          <Header title="DASHBOARD" subtitle="Welcome to your dashboard" />
+          <Stack spacing={0.75}>
+            <Typography
+              sx={{
+                fontSize: { xs: "1.15rem", md: "1.35rem" },
+                fontWeight: 500,
+                letterSpacing: "-0.025em",
+                color: "text.primary",
+              }}
+            >
+              Dashboard
+            </Typography>
+
+            <Typography sx={{ fontSize: "0.78rem", color: "text.secondary" }}>
+              Welcome to your enterprise overview.
+            </Typography>
+          </Stack>
         </Paper>
 
         <Alert
@@ -482,16 +737,18 @@ const Dashboard = () => {
           direction={{ xs: "column", lg: "row" }}
           justifyContent="space-between"
           alignItems={{ xs: "flex-start", lg: "center" }}
-          spacing={2}
+          spacing={2.25}
           sx={{ position: "relative", zIndex: 1 }}
         >
-          <Box>
-            <Header
-              title="DASHBOARD"
-              subtitle={`Performance overview for last ${timeframeDays} days`}
-            />
+          <Box minWidth={0}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={1}>
+              <Chip
+                icon={<ShieldOutlinedIcon sx={{ fontSize: 14 }} />}
+                size="small"
+                label="Enterprise Overview"
+                sx={styles.heroChip}
+              />
 
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={1}>
               <Chip
                 icon={<AccessTimeOutlinedIcon sx={{ fontSize: 14 }} />}
                 size="small"
@@ -500,15 +757,46 @@ const Dashboard = () => {
               />
 
               {warning && (
-                <Chip size="small" label="Partial Data" sx={styles.heroWarningChip} />
+                <Chip
+                  size="small"
+                  label="Partial Data"
+                  sx={styles.heroWarningChip}
+                />
               )}
             </Stack>
+
+            <Typography
+              sx={{
+                color: "#fff",
+                fontSize: { xs: "1.35rem", sm: "1.55rem", md: "1.85rem" },
+                fontWeight: 500,
+                letterSpacing: "-0.035em",
+                lineHeight: 1.08,
+              }}
+            >
+              Business Command Center
+            </Typography>
+
+            <Typography
+              sx={{
+                mt: 0.85,
+                maxWidth: 720,
+                color: "rgba(255,255,255,0.74)",
+                fontSize: { xs: "0.76rem", md: "0.84rem" },
+                lineHeight: 1.6,
+                fontWeight: 400,
+              }}
+            >
+              Monitor revenue, sales activity, customers, workforce, inventory, and procurement
+              from a single operational dashboard.
+            </Typography>
           </Box>
 
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={1}
             alignItems={{ xs: "stretch", sm: "center" }}
+            width={{ xs: "100%", lg: "auto" }}
           >
             <FormControl size="small" sx={styles.heroSelect}>
               <Select
@@ -525,12 +813,7 @@ const Dashboard = () => {
             <Tooltip title="Refresh dashboard">
               <span>
                 <IconButton
-                  onClick={() => {
-                    queryClient.invalidateQueries({
-                      queryKey: ["dashboard", timeframeDays],
-                    });
-                    refetch();
-                  }}
+                  onClick={handleRefresh}
                   disabled={isFetching}
                   sx={styles.heroIconButton}
                 >
@@ -553,6 +836,25 @@ const Dashboard = () => {
             </Button>
           </Stack>
         </Stack>
+
+        <Divider sx={{ my: 2, borderColor: "rgba(255,255,255,0.14)" }} />
+
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "repeat(2, minmax(0, 1fr))",
+              lg: "repeat(4, minmax(0, 1fr))",
+            },
+            gap: { xs: 1.25, md: 2 },
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          {heroStats.map((item) => (
+            <HeroSummaryItem key={item.label} label={item.label} value={item.value} />
+          ))}
+        </Box>
 
         {isFetching && !isLoading && (
           <LinearProgress
@@ -585,20 +887,22 @@ const Dashboard = () => {
 
       <Box
         sx={{
-          opacity: isFetching && !isLoading ? 0.65 : 1,
-          transition: "opacity 160ms ease",
+          opacity: isFetching && !isLoading ? 0.72 : 1,
+          transition: "opacity 120ms ease",
           pointerEvents: isFetching ? "none" : "auto",
         }}
       >
         <Box
-          display="grid"
-          gridTemplateColumns={{
-            xs: "1fr",
-            sm: "repeat(2, 1fr)",
-            xl: "repeat(4, 1fr)",
+          sx={{
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "1fr",
+              sm: "repeat(2, minmax(0, 1fr))",
+              xl: "repeat(4, minmax(0, 1fr))",
+            },
+            gap: { xs: 1.5, md: 2 },
+            mb: 2.5,
           }}
-          gap={2}
-          mb={2.5}
         >
           {metricCards.map((card) => (
             <MetricCard
@@ -610,49 +914,41 @@ const Dashboard = () => {
         </Box>
 
         <Box
-          display="grid"
-          gridTemplateColumns={{ xs: "1fr", lg: "repeat(12, 1fr)" }}
-          gap={2}
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", lg: "repeat(12, minmax(0, 1fr))" },
+            gap: { xs: 1.5, md: 2 },
+          }}
         >
           <Paper elevation={0} sx={{ ...styles.card, ...styles.chartCard }}>
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              justifyContent="space-between"
-              alignItems={{ xs: "flex-start", sm: "center" }}
-              spacing={1.5}
-              mb={1}
-            >
-              <SectionTitle
-                title={
-                  salesPerformance.context_label
-                    ? `${salesPerformance.context_label} Trend`
-                    : "Sales Trend"
-                }
-                subtitle="Monthly sales trend for the most recent 6-month period"
-              />
-
-              <Stack alignItems={{ xs: "flex-start", sm: "flex-end" }}>
-                <Typography
+            <SectionTitle
+              title={
+                salesPerformance.context_label
+                  ? `${salesPerformance.context_label} Trend`
+                  : "Sales Trend"
+              }
+              subtitle="Monthly sales trend for the most recent 6-month period."
+              icon={
+                <AccentIcon
+                  icon={<TrendingUpRoundedIcon fontSize="small" />}
+                  color={theme.palette.primary.main}
+                  small
+                />
+              }
+              action={
+                <Chip
+                  size="small"
+                  label={formatCurrency(salesPerformance.sales_value_this_month)}
                   sx={{
-                    fontSize: "1rem",
-                    fontWeight: 500,
-                    color: "text.primary",
-                    letterSpacing: "-0.015em",
+                    borderRadius: "999px",
+                    bgcolor: alpha(theme.palette.primary.main, 0.08),
+                    color: theme.palette.primary.main,
+                    fontSize: "0.66rem",
+                    fontWeight: 400,
                   }}
-                >
-                  {formatCurrency(salesPerformance.sales_value_this_month)}
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: "0.7rem",
-                    color: "text.secondary",
-                    fontWeight: 300,
-                  }}
-                >
-                  Current month total
-                </Typography>
-              </Stack>
-            </Stack>
+                />
+              }
+            />
 
             <Divider sx={{ mb: 1 }} />
 
@@ -660,86 +956,63 @@ const Dashboard = () => {
               {salesTrendForChart[0]?.data?.length > 0 ? (
                 <LineChart isDashboard data={salesTrendForChart} />
               ) : (
-                <Box
-                  display="flex"
-                  height="100%"
-                  alignItems="center"
-                  justifyContent="center"
-                >
-                  <Typography sx={styles.emptyText}>
-                    No trend data available for this timeframe.
-                  </Typography>
-                </Box>
+                <EmptyState
+                  title="No trend data"
+                  subtitle="Sales trend data will appear here once available."
+                />
               )}
             </Box>
           </Paper>
 
           <Paper elevation={0} sx={{ ...styles.card, ...styles.sideCard }}>
-            <Stack
-              direction="row"
-              justifyContent="space-between"
-              alignItems="flex-start"
-              mb={1.25}
-            >
-              <SectionTitle
-                title="Recent Sales"
-                subtitle="Latest transactions and order activity"
-              />
+            <SectionTitle
+              title="Recent Sales"
+              subtitle="Latest transactions and order activity."
+              icon={
+                <AccentIcon
+                  icon={<PointOfSaleOutlinedIcon fontSize="small" />}
+                  color={theme.palette.success.main}
+                  small
+                />
+              }
+              action={
+                <Button
+                  size="small"
+                  onClick={() => navigate("/sales/orders")}
+                  endIcon={<ArrowForwardRoundedIcon fontSize="small" />}
+                  sx={{ textTransform: "none", fontSize: "0.7rem" }}
+                >
+                  View All
+                </Button>
+              }
+            />
 
-              <Button
-                size="small"
-                onClick={() => navigate("/sales/orders")}
-                sx={{ textTransform: "none", fontSize: "0.7rem" }}
-              >
-                View All
-              </Button>
-            </Stack>
+            <Divider sx={{ mb: 1 }} />
 
             <Stack spacing={1} sx={{ overflow: "auto", pr: 0.5, mt: 0.5 }}>
               {recentSales.slice(0, 8).map((sale, index) => (
-                <Box
+                <RecentSaleItem
                   key={sale.id || `sale-${index}`}
-                  onClick={() => navigate(`/sales/orders/${sale.id}`)}
-                  sx={styles.saleItem}
-                >
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                    spacing={1.5}
-                  >
-                    <Box minWidth={0}>
-                      <Typography sx={styles.salePrimary} noWrap>
-                        {sale.customer?.name ||
-                          `Order #${sale.order_number || "N/A"}`}
-                      </Typography>
-
-                      <Typography sx={styles.saleSecondary}>
-                        {sale.order_date
-                          ? new Date(sale.order_date).toLocaleDateString()
-                          : "No date"}
-                      </Typography>
-                    </Box>
-
-                    <Typography sx={styles.saleAmount}>
-                      {formatCurrency(sale.total_amount)}
-                    </Typography>
-                  </Stack>
-                </Box>
+                  sale={sale}
+                  formatCurrency={formatCurrency}
+                  onClick={() => {
+                    if (sale.id) navigate(`/sales/orders/${sale.id}`);
+                  }}
+                />
               ))}
 
               {recentSales.length === 0 && (
-                <Box sx={{ py: 5, textAlign: "center" }}>
-                  <Typography sx={styles.emptyText}>
-                    No recent sales activity.
-                  </Typography>
-                </Box>
+                <EmptyState
+                  title="No recent sales"
+                  subtitle="Recent sales activity will appear here."
+                />
               )}
             </Stack>
           </Paper>
 
           <ModuleCard
             route="/inventory"
+            color={theme.palette.info.main}
             icon={<Inventory2OutlinedIcon fontSize="small" />}
             title="Inventory Status"
             subtitle="Stock availability and value"
@@ -757,6 +1030,7 @@ const Dashboard = () => {
 
           <ModuleCard
             route="/purchasing"
+            color={theme.palette.warning.main}
             icon={<ShoppingCartCheckoutOutlinedIcon fontSize="small" />}
             title="Purchasing"
             subtitle="Procurement overview"
@@ -774,6 +1048,7 @@ const Dashboard = () => {
 
           <ModuleCard
             route="/finance"
+            color={theme.palette.success.main}
             icon={<AccountBalanceWalletOutlinedIcon fontSize="small" />}
             title="Financial Health"
             subtitle="Profitability indicators"

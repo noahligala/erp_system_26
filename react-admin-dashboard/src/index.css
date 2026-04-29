@@ -1,7 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&display=swap");
-
 /* =========================================
-   GLOBAL RESET + BASE STYLES
+   GLOBAL RESET
 ========================================= */
 
 *,
@@ -11,28 +9,36 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  height: 100%;
+  width: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: auto;
 }
 
-html,
 body,
 #root,
 .app {
   margin: 0;
   padding: 0;
-  height: 100%;
+  min-height: 100%;
   width: 100%;
-  overflow: hidden;
-  line-height: 1.5;
-  font-family: "Source Sans Pro", sans-serif;
 }
 
 body {
   -webkit-tap-highlight-color: transparent;
-  background: #f9f9f9;
-  color: #222;
+  font-family:
+    Inter,
+    Geist,
+    "SF Pro Display",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 /* =========================================
@@ -42,111 +48,102 @@ body {
 .app {
   display: flex;
   position: relative;
+  min-height: 100vh;
+  width: 100%;
   overflow: hidden;
 }
 
 .content {
-  height: 100%;
-  width: 100%;
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow-y: overlay; /* Avoid layout shift */
+  overflow-y: auto;
   overflow-x: hidden;
-
-  /* --- Firefox Scrollbar --- */
-  scrollbar-width: none; /* Hidden by default */
+  scrollbar-gutter: stable;
 }
 
 /* =========================================
-   SCROLLBAR STYLING (TRULY INVISIBLE)
+   SCROLLBARS
+   Keep these lightweight. Theme.js controls
+   global scrollbar colors; this only handles
+   the main content area.
 ========================================= */
 
-/* Chrome, Safari, Edge */
+.content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.32) transparent;
+}
+
 .content::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-  background-color: transparent !important; /* ✅ Remove base gutter */
+  width: 6px;
+  height: 6px;
 }
 
 .content::-webkit-scrollbar-track {
-  background-color: transparent !important; /* ✅ Track invisible */
+  background: transparent;
 }
 
 .content::-webkit-scrollbar-corner {
-  background-color: transparent !important; /* ✅ Hide corner */
+  background: transparent;
 }
 
 .content::-webkit-scrollbar-thumb {
-  background-color: transparent; /* Hidden by default */
-  border-radius: 10px;
-  transition: background-color 0.3s ease-out;
+  background-color: rgba(100, 116, 139, 0.28);
+  border-radius: 999px;
 }
 
-/* ✅ Appear only during scroll / hover */
-.content:hover::-webkit-scrollbar-thumb,
-.content:active::-webkit-scrollbar-thumb,
-.content:focus::-webkit-scrollbar-thumb {
-  background-color: rgba(136, 136, 136, 0.5);
-}
-
-/* ✅ Fade away when not interacting */
-.content::-webkit-scrollbar-thumb:not(:hover) {
-  transition: background-color 0.3s ease-in;
-}
-
-/* ✅ Darker on direct hover */
 .content::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(85, 85, 85, 0.7);
-}
-
-/* Firefox */
-@-moz-document url-prefix() {
-  .content {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-  }
-
-  .content:hover,
-  .content:active,
-  .content:focus {
-    scrollbar-color: rgba(136, 136, 136, 0.5) transparent;
-  }
+  background-color: rgba(100, 116, 139, 0.44);
 }
 
 /* =========================================
-   TYPOGRAPHY & INTERACTION
+   BASIC ELEMENT NORMALIZATION
 ========================================= */
-
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 600;
-  margin: 0.5em 0;
-}
-
-p {
-  margin: 0.5em 0;
-}
 
 a {
   color: inherit;
   text-decoration: none;
-  transition: color 0.2s ease;
 }
 
-a:hover {
-  color: #0077ff;
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
 button {
-  font-family: inherit;
   cursor: pointer;
-  border: none;
-  outline: none;
-  transition: background-color 0.2s ease, transform 0.1s ease;
 }
 
-button:active {
-  transform: scale(0.97);
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* =========================================
+   ACCESSIBILITY
+========================================= */
+
+:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.7);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* =========================================
@@ -154,11 +151,11 @@ button:active {
 ========================================= */
 
 .hidden-scrollbar {
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: none;
 }
 
 .hidden-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome, Safari */
+  display: none;
 }
 
 .center {
@@ -168,54 +165,25 @@ button:active {
 }
 
 .fullscreen {
-  height: 100vh;
+  min-height: 100vh;
   width: 100vw;
 }
 
-.fade-in {
-  opacity: 0;
-  animation: fadeIn 0.4s ease-in-out forwards;
-}
-
-@keyframes fadeIn {
-  to {
-    opacity: 1;
-  }
-}
-
 /* =========================================
-   DARK MODE SUPPORT (auto)
+   CALENDAR-SPECIFIC HELPERS
+   These are app behavior styles, not theme
+   colors, so they can stay here.
 ========================================= */
-@media (prefers-color-scheme: dark) {
-  html,
-  body,
-  #root,
-  .app {
 
-    color: #eee;
-  }
+.ligco-event-done {
+  opacity: 0.65;
+}
 
-  .content:hover::-webkit-scrollbar-thumb,
-  .content:active::-webkit-scrollbar-thumb,
-  .content:focus::-webkit-scrollbar-thumb {
-    background-color: rgba(200, 200, 200, 0.4);
-  }
+.ligco-calendar .ligco-event-done {
+  opacity: 0.65;
+}
 
-  .content::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.6);
-  }
-
-  /*=================================
-     Event Settings Modal Overrides
-  =================================*/
-  .ligco-event-done {
-      opacity: 0.65;
-  }
-  .ligco-calendar .ligco-event-done {
-    opacity: 0.65;
-  }
-  .ligco-calendar .ligco-event-done .fc-event-title,
-  .ligco-calendar .ligco-event-done .fc-event-title-container {
-    text-decoration: line-through;
-  }
+.ligco-calendar .ligco-event-done .fc-event-title,
+.ligco-calendar .ligco-event-done .fc-event-title-container {
+  text-decoration: line-through;
 }

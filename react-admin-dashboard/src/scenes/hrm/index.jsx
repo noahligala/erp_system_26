@@ -51,6 +51,13 @@ import { useAuth } from "../../api/AuthProvider";
 
 const hasRole = (user, roles) => user && roles.includes(user.company_role);
 
+const getAccentVars = (color) => ({
+  "--accent": color,
+  "--accent-bg": alpha(color, 0.1),
+  "--accent-border": alpha(color, 0.16),
+  "--accent-border-strong": alpha(color, 0.28),
+});
+
 const normalizeDashboardResponse = (res) => {
   if (!res) {
     return {
@@ -111,37 +118,37 @@ const DashboardSkeleton = () => {
     <Box sx={styles.shell}>
       <Skeleton
         variant="rounded"
-        height={112}
+        height={118}
         sx={{ borderRadius: "14px", mb: 2.5 }}
       />
 
       <Grid container spacing={2}>
         {[...Array(4)].map((_, i) => (
           <Grid item xs={12} sm={6} lg={3} key={`stat-${i}`}>
-            <Paper sx={{ ...styles.card, minHeight: 140 }}>
+            <Paper sx={{ ...styles.card, minHeight: 136 }}>
               <Skeleton variant="circular" width={38} height={38} />
-              <Skeleton variant="text" width="45%" height={34} sx={{ mt: 2 }} />
-              <Skeleton variant="text" width="70%" height={18} />
+              <Skeleton variant="text" width="48%" height={34} sx={{ mt: 2 }} />
+              <Skeleton variant="text" width="74%" height={18} />
             </Paper>
           </Grid>
         ))}
 
         <Grid item xs={12}>
           <Paper sx={styles.card}>
-            <Skeleton variant="text" width={160} height={28} sx={{ mb: 1.5 }} />
+            <Skeleton variant="text" width={170} height={28} sx={{ mb: 1.5 }} />
 
             <Grid container spacing={1.5}>
               {[...Array(8)].map((_, i) => (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={`nav-${i}`}>
                   <Paper sx={{ ...styles.subtleCard, minHeight: 124 }}>
-                    <Skeleton variant="circular" width={36} height={36} />
+                    <Skeleton variant="circular" width={34} height={34} />
                     <Skeleton
                       variant="text"
-                      width="55%"
+                      width="58%"
                       height={24}
                       sx={{ mt: 1.5 }}
                     />
-                    <Skeleton variant="text" width="75%" height={16} />
+                    <Skeleton variant="text" width="78%" height={16} />
                   </Paper>
                 </Grid>
               ))}
@@ -153,152 +160,45 @@ const DashboardSkeleton = () => {
   );
 };
 
-const StatCard = ({ title, value, subtitle, icon, color, trend }) => {
+const AccentIcon = ({ icon, color, small = false }) => {
   const theme = useTheme();
   const styles = theme.hrmDashboard;
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        ...styles.card,
-        ...styles.statCard(color),
-      }}
+    <Box
+      sx={small ? styles.iconBoxSmall : styles.iconBox}
+      style={getAccentVars(color)}
     >
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        sx={{ position: "relative", zIndex: 1 }}
-      >
-        <Box sx={styles.iconBox(color)}>{icon}</Box>
-
-        {trend && (
-          <Chip
-            size="small"
-            icon={<AutoGraphRoundedIcon sx={{ fontSize: 14 }} />}
-            label={trend}
-            sx={{
-              height: 24,
-              borderRadius: "999px",
-              bgcolor: alpha(color, 0.09),
-              color,
-              fontWeight: 400,
-              fontSize: "0.66rem",
-              "& .MuiChip-icon": { color },
-            }}
-          />
-        )}
-      </Stack>
-
-      <Box sx={{ position: "relative", zIndex: 1, mt: 2 }}>
-        <Typography sx={styles.statValue}>{formatNumber(value)}</Typography>
-        <Typography sx={styles.statTitle}>{title}</Typography>
-
-        {subtitle && <Typography sx={styles.statSubtitle}>{subtitle}</Typography>}
-      </Box>
-    </Paper>
+      {icon}
+    </Box>
   );
 };
 
-const NavigationCard = ({
-  title,
-  subtitle,
-  icon,
-  linkTo,
-  color,
-  disabled = false,
-  badge,
-}) => {
-  const theme = useTheme();
-  const navigate = useNavigate();
-  const styles = theme.hrmDashboard;
-
-  const handleClick = useCallback(() => {
-    if (!disabled) navigate(linkTo);
-  }, [disabled, navigate, linkTo]);
-
-  return (
-    <Paper
-      elevation={0}
-      onClick={handleClick}
-      sx={{
-        ...styles.subtleCard,
-        ...styles.navCard(color, disabled),
-      }}
-    >
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="flex-start"
-        spacing={1.5}
-        sx={{ position: "relative", zIndex: 1 }}
-      >
-        <Box sx={styles.iconBox(color, 36, "11px")}>{icon}</Box>
-
-        {badge && (
-          <Chip
-            label={badge}
-            size="small"
-            sx={{
-              height: 22,
-              fontSize: "0.64rem",
-              borderRadius: "999px",
-              bgcolor: alpha(color, 0.09),
-              color,
-              fontWeight: 400,
-            }}
-          />
-        )}
-      </Stack>
-
-      <Box sx={{ position: "relative", zIndex: 1, mt: 1.5 }}>
-        <Typography sx={styles.navTitle}>{title}</Typography>
-        <Typography sx={styles.navSubtitle}>{subtitle}</Typography>
-      </Box>
-
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ position: "relative", zIndex: 1, mt: 1.5 }}
-      >
-        <Typography sx={styles.navAction(color, disabled)}>
-          {disabled ? "Restricted" : "Open module"}
-        </Typography>
-
-        {!disabled && (
-          <ArrowForwardRoundedIcon
-            sx={{
-              fontSize: 18,
-              color,
-            }}
-          />
-        )}
-      </Stack>
-    </Paper>
-  );
-};
-
-const SectionHeader = ({ title, subtitle, icon }) => {
+const SectionHeader = ({ title, subtitle, icon, action }) => {
   const theme = useTheme();
   const styles = theme.hrmDashboard;
 
   return (
     <Stack
-      direction="row"
+      direction={{ xs: "column", sm: "row" }}
       justifyContent="space-between"
       alignItems={{ xs: "flex-start", sm: "center" }}
       spacing={1.5}
       sx={{ mb: 1.5 }}
     >
-      <Box>
-        <Typography sx={styles.sectionTitle}>{title}</Typography>
+      <Stack direction="row" spacing={1.25} alignItems="flex-start">
+        {icon && <Box sx={{ mt: 0.15 }}>{icon}</Box>}
 
-        {subtitle && <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>}
-      </Box>
+        <Box>
+          <Typography sx={styles.sectionTitle}>{title}</Typography>
 
-      {icon}
+          {subtitle && (
+            <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>
+          )}
+        </Box>
+      </Stack>
+
+      {action}
     </Stack>
   );
 };
@@ -338,7 +238,8 @@ const EmptyState = ({ title, subtitle }) => {
               mt: 0.4,
               fontSize: "0.7rem",
               color: "text.secondary",
-              fontWeight: 300,
+              fontWeight: 400,
+              lineHeight: 1.55,
             }}
           >
             {subtitle}
@@ -346,6 +247,210 @@ const EmptyState = ({ title, subtitle }) => {
         )}
       </Box>
     </Box>
+  );
+};
+
+const StatCard = ({ title, value, subtitle, icon, color, trend }) => {
+  const theme = useTheme();
+  const styles = theme.hrmDashboard;
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        ...styles.card,
+        ...styles.statCard,
+        height: "100%",
+      }}
+      style={getAccentVars(color)}
+    >
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        spacing={1.5}
+      >
+        <AccentIcon icon={icon} color={color} />
+
+        {trend && (
+          <Chip
+            size="small"
+            icon={<AutoGraphRoundedIcon sx={{ fontSize: 14 }} />}
+            label={trend}
+            sx={{
+              height: 22,
+              borderRadius: "999px",
+              bgcolor: alpha(color, 0.09),
+              color,
+              fontWeight: 400,
+              fontSize: "0.64rem",
+              "& .MuiChip-icon": { color },
+            }}
+          />
+        )}
+      </Stack>
+
+      <Box sx={{ mt: 2 }}>
+        <Typography sx={styles.statValue}>{formatNumber(value)}</Typography>
+        <Typography sx={styles.statTitle}>{title}</Typography>
+
+        {subtitle && (
+          <Typography sx={styles.statSubtitle}>{subtitle}</Typography>
+        )}
+      </Box>
+    </Paper>
+  );
+};
+
+const NavigationCard = ({
+  title,
+  subtitle,
+  icon,
+  linkTo,
+  color,
+  disabled = false,
+  badge,
+}) => {
+  const theme = useTheme();
+  const navigate = useNavigate();
+  const styles = theme.hrmDashboard;
+
+  const handleClick = useCallback(() => {
+    if (!disabled) navigate(linkTo);
+  }, [disabled, navigate, linkTo]);
+
+  return (
+    <Paper
+      elevation={0}
+      onClick={handleClick}
+      data-disabled={disabled ? "true" : "false"}
+      sx={{
+        ...styles.subtleCard,
+        ...styles.navCard,
+        height: "100%",
+      }}
+      style={getAccentVars(color)}
+    >
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        spacing={1.5}
+      >
+        <AccentIcon icon={icon} color={color} small />
+
+        {badge && (
+          <Chip
+            label={badge}
+            size="small"
+            sx={{
+              height: 21,
+              fontSize: "0.62rem",
+              borderRadius: "999px",
+              bgcolor: alpha(color, 0.09),
+              color,
+              fontWeight: 400,
+              maxWidth: 112,
+            }}
+          />
+        )}
+      </Stack>
+
+      <Box sx={{ mt: 1.5 }}>
+        <Typography sx={styles.navTitle}>{title}</Typography>
+        <Typography sx={styles.navSubtitle}>{subtitle}</Typography>
+      </Box>
+
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mt: 1.5 }}
+      >
+        <Typography
+          sx={{
+            ...styles.navAction,
+            color: disabled ? "text.disabled" : "var(--accent)",
+          }}
+        >
+          {disabled ? "Restricted" : "Open module"}
+        </Typography>
+
+        {!disabled && (
+          <ArrowForwardRoundedIcon
+            sx={{
+              fontSize: 18,
+              color,
+            }}
+          />
+        )}
+      </Stack>
+    </Paper>
+  );
+};
+
+const EventItem = ({ type, name, date, years }) => {
+  const theme = useTheme();
+  const isBirthday = type === "birthday";
+  const color = isBirthday
+    ? theme.palette.secondary.main
+    : theme.palette.primary.main;
+
+  return (
+    <ListItem
+      sx={{
+        py: 0.75,
+        px: 0.75,
+        borderRadius: "12px",
+        mb: 0.5,
+        border: `1px solid ${alpha(theme.palette.divider, 0.55)}`,
+        "&:hover": {
+          bgcolor: alpha(color, 0.045),
+          borderColor: alpha(color, 0.16),
+        },
+      }}
+    >
+      <ListItemIcon sx={{ minWidth: 40 }}>
+        <Avatar
+          sx={{
+            bgcolor: alpha(color, 0.11),
+            color,
+            width: 30,
+            height: 30,
+            border: `1px solid ${alpha(color, 0.16)}`,
+          }}
+        >
+          {isBirthday ? (
+            <CakeOutlinedIcon sx={{ fontSize: 16 }} />
+          ) : (
+            <CelebrationOutlinedIcon sx={{ fontSize: 16 }} />
+          )}
+        </Avatar>
+      </ListItemIcon>
+
+      <ListItemText
+        primary={name}
+        secondary={
+          isBirthday
+            ? `Birthday on ${DateTime.fromISO(date).toLocaleString(
+                DateTime.DATE_MED
+              )}`
+            : `Anniversary (${years} yrs) on ${DateTime.fromISO(
+                date
+              ).toLocaleString(DateTime.DATE_MED)}`
+        }
+        primaryTypographyProps={{
+          fontSize: "0.76rem",
+          fontWeight: 500,
+          color: "text.primary",
+        }}
+        secondaryTypographyProps={{
+          fontSize: "0.68rem",
+          color: "text.secondary",
+          fontWeight: 400,
+        }}
+      />
+    </ListItem>
   );
 };
 
@@ -436,6 +541,11 @@ const HrmDashboard = () => {
   const anniversaryCount = upcomingEvents.anniversaries?.length || 0;
   const eventCount = birthdayCount + anniversaryCount;
 
+  const pendingLeave = Number(hrmOverview.pending_leave_requests || 0);
+  const activeEmployees = Number(hrmOverview.active_employees || 0);
+  const newHires = Number(hrmOverview.new_hires_period || 0);
+  const openPositions = Number(recruitmentOverview.open_positions || 0);
+
   if (isLoading) return <DashboardSkeleton />;
 
   if (isError && !dashboardData) {
@@ -469,21 +579,22 @@ const HrmDashboard = () => {
 
   return (
     <Box sx={styles.shell}>
-      <Paper
-        elevation={0}
-        sx={{
-          ...styles.card,
-          ...styles.heroCard,
-        }}
-      >
+      <Paper elevation={0} sx={{ ...styles.card, ...styles.heroCard }}>
         <Stack
           direction={{ xs: "column", md: "row" }}
           justifyContent="space-between"
           alignItems={{ xs: "flex-start", md: "center" }}
-          spacing={1.75}
+          spacing={2}
         >
           <Box>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ mb: 1 }}
+            >
               <Chip
                 icon={<ShieldOutlinedIcon sx={{ fontSize: 14 }} />}
                 label="Human Resource Management"
@@ -503,7 +614,9 @@ const HrmDashboard = () => {
               {lastUpdated && (
                 <Chip
                   icon={<AccessTimeRoundedIcon sx={{ fontSize: 14 }} />}
-                  label={lastUpdated.toLocaleString(DateTime.TIME_SIMPLE)}
+                  label={`Updated ${lastUpdated.toLocaleString(
+                    DateTime.TIME_SIMPLE
+                  )}`}
                   size="small"
                   sx={{
                     borderRadius: "999px",
@@ -527,7 +640,12 @@ const HrmDashboard = () => {
             </Typography>
           </Box>
 
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1}
+            alignItems={{ xs: "stretch", sm: "center" }}
+            width={{ xs: "100%", md: "auto" }}
+          >
             <Button
               variant="contained"
               startIcon={<PersonAddAlt1Icon />}
@@ -576,6 +694,46 @@ const HrmDashboard = () => {
             </Tooltip>
           </Stack>
         </Stack>
+
+        <Divider sx={{ my: 2, borderColor: alpha(theme.palette.divider, 0.7) }} />
+
+        <Grid container spacing={1.25}>
+          <Grid item xs={6} md={3}>
+            <Typography sx={{ fontSize: "0.66rem", color: "text.secondary" }}>
+              Workforce
+            </Typography>
+            <Typography sx={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              {formatNumber(activeEmployees)} active
+            </Typography>
+          </Grid>
+
+          <Grid item xs={6} md={3}>
+            <Typography sx={{ fontSize: "0.66rem", color: "text.secondary" }}>
+              Recruitment
+            </Typography>
+            <Typography sx={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              {formatNumber(openPositions)} open roles
+            </Typography>
+          </Grid>
+
+          <Grid item xs={6} md={3}>
+            <Typography sx={{ fontSize: "0.66rem", color: "text.secondary" }}>
+              Approvals
+            </Typography>
+            <Typography sx={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              {formatNumber(pendingLeave)} pending
+            </Typography>
+          </Grid>
+
+          <Grid item xs={6} md={3}>
+            <Typography sx={{ fontSize: "0.66rem", color: "text.secondary" }}>
+              Events
+            </Typography>
+            <Typography sx={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              {formatNumber(eventCount)} this week
+            </Typography>
+          </Grid>
+        </Grid>
       </Paper>
 
       {isFetching && !isLoading && (
@@ -609,7 +767,7 @@ const HrmDashboard = () => {
             <StatCard
               title="Active Employees"
               subtitle="Current active workforce"
-              value={hrmOverview.active_employees}
+              value={activeEmployees}
               icon={<GroupIcon />}
               color={theme.palette.primary.main}
               trend="Live"
@@ -620,7 +778,7 @@ const HrmDashboard = () => {
             <StatCard
               title="New Hires"
               subtitle="Recently onboarded employees"
-              value={hrmOverview.new_hires_period}
+              value={newHires}
               icon={<PersonAddIcon />}
               color={theme.palette.info.main}
               trend="Recent"
@@ -631,7 +789,7 @@ const HrmDashboard = () => {
             <StatCard
               title="Pending Leave"
               subtitle="Requests awaiting action"
-              value={hrmOverview.pending_leave_requests}
+              value={pendingLeave}
               icon={<BeachAccessIcon />}
               color={theme.palette.warning.main}
               trend={canManageLeave ? "Review" : "Track"}
@@ -642,7 +800,7 @@ const HrmDashboard = () => {
             <StatCard
               title="Open Positions"
               subtitle="Recruitment pipeline"
-              value={recruitmentOverview.open_positions}
+              value={openPositions}
               icon={<BusinessCenterIcon />}
               color={theme.palette.success.main}
               trend="Hiring"
@@ -654,6 +812,17 @@ const HrmDashboard = () => {
               <SectionHeader
                 title="Quick Actions"
                 subtitle="Frequently used HR operations and management modules."
+                action={
+                  <Chip
+                    size="small"
+                    label="Operations"
+                    sx={{
+                      bgcolor: alpha(theme.palette.primary.main, 0.08),
+                      color: theme.palette.primary.main,
+                      fontSize: "0.66rem",
+                    }}
+                  />
+                }
               />
 
               <Grid container spacing={1.5}>
@@ -690,11 +859,7 @@ const HrmDashboard = () => {
                         : "/hrm/request-leave"
                     }
                     color={theme.palette.warning.main}
-                    badge={
-                      hrmOverview.pending_leave_requests
-                        ? `${hrmOverview.pending_leave_requests} pending`
-                        : null
-                    }
+                    badge={pendingLeave ? `${pendingLeave} pending` : null}
                   />
                 </Grid>
 
@@ -762,6 +927,13 @@ const HrmDashboard = () => {
                 title="Hiring Trends"
                 subtitle="Monthly hiring movement across the selected period."
                 icon={
+                  <AccentIcon
+                    icon={<TrendingUpIcon />}
+                    color={theme.palette.primary.main}
+                    small
+                  />
+                }
+                action={
                   <Chip
                     size="small"
                     label={`${hiringTrendData.length} periods`}
@@ -799,6 +971,13 @@ const HrmDashboard = () => {
               <SectionHeader
                 title="Department Breakdown"
                 subtitle="Employee distribution by department."
+                icon={
+                  <AccentIcon
+                    icon={<GroupIcon />}
+                    color={theme.palette.info.main}
+                    small
+                  />
+                }
               />
 
               <Divider sx={{ borderColor: alpha(theme.palette.divider, 0.55) }} />
@@ -845,7 +1024,7 @@ const HrmDashboard = () => {
                           color: theme.palette.text.primary,
                           borderRadius: 10,
                           fontSize: 12,
-                          boxShadow: `0 12px 30px ${alpha("#000", 0.14)}`,
+                          boxShadow: theme.custom?.shadowPopup,
                         },
                       },
                     }}
@@ -866,6 +1045,13 @@ const HrmDashboard = () => {
                 title="Upcoming Events"
                 subtitle="Birthdays and anniversaries in the next 7 days."
                 icon={
+                  <AccentIcon
+                    icon={<CelebrationOutlinedIcon />}
+                    color={theme.palette.secondary.main}
+                    small
+                  />
+                }
+                action={
                   <Chip
                     size="small"
                     label={`${eventCount} event${eventCount === 1 ? "" : "s"}`}
@@ -890,102 +1076,23 @@ const HrmDashboard = () => {
                   />
                 ) : (
                   <List dense sx={{ p: 0 }}>
-                    {(upcomingEvents.birthdays || []).map((e) => (
-                      <ListItem
-                        key={`b-${e.id}`}
-                        sx={{
-                          py: 0.75,
-                          px: 0.5,
-                          borderRadius: "10px",
-                          mb: 0.5,
-                          "&:hover": {
-                            bgcolor: alpha(theme.palette.secondary.main, 0.045),
-                          },
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 40 }}>
-                          <Avatar
-                            sx={{
-                              bgcolor: alpha(theme.palette.secondary.main, 0.11),
-                              color: theme.palette.secondary.main,
-                              width: 30,
-                              height: 30,
-                              border: `1px solid ${alpha(
-                                theme.palette.secondary.main,
-                                0.16
-                              )}`,
-                            }}
-                          >
-                            <CakeOutlinedIcon sx={{ fontSize: 16 }} />
-                          </Avatar>
-                        </ListItemIcon>
-
-                        <ListItemText
-                          primary={e.name}
-                          secondary={`Birthday on ${DateTime.fromISO(
-                            e.date
-                          ).toLocaleString(DateTime.DATE_MED)}`}
-                          primaryTypographyProps={{
-                            fontSize: "0.76rem",
-                            fontWeight: 500,
-                            color: "text.primary",
-                          }}
-                          secondaryTypographyProps={{
-                            fontSize: "0.68rem",
-                            color: "text.secondary",
-                            fontWeight: 300,
-                          }}
-                        />
-                      </ListItem>
+                    {(upcomingEvents.birthdays || []).map((event) => (
+                      <EventItem
+                        key={`birthday-${event.id}`}
+                        type="birthday"
+                        name={event.name}
+                        date={event.date}
+                      />
                     ))}
 
-                    {(upcomingEvents.anniversaries || []).map((e) => (
-                      <ListItem
-                        key={`a-${e.id}`}
-                        sx={{
-                          py: 0.75,
-                          px: 0.5,
-                          borderRadius: "10px",
-                          mb: 0.5,
-                          "&:hover": {
-                            bgcolor: alpha(theme.palette.primary.main, 0.045),
-                          },
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 40 }}>
-                          <Avatar
-                            sx={{
-                              bgcolor: alpha(theme.palette.primary.main, 0.11),
-                              color: theme.palette.primary.main,
-                              width: 30,
-                              height: 30,
-                              border: `1px solid ${alpha(
-                                theme.palette.primary.main,
-                                0.16
-                              )}`,
-                            }}
-                          >
-                            <CelebrationOutlinedIcon sx={{ fontSize: 16 }} />
-                          </Avatar>
-                        </ListItemIcon>
-
-                        <ListItemText
-                          primary={e.name}
-                          secondary={`Anniversary (${e.years} yrs) on ${DateTime.fromISO(
-                            e.date
-                          ).toLocaleString(DateTime.DATE_MED)}`}
-                          primaryTypographyProps={{
-                            fontSize: "0.76rem",
-                            fontWeight: 500,
-                            color: "text.primary",
-                          }}
-                          secondaryTypographyProps={{
-                            fontSize: "0.68rem",
-                            color: "text.secondary",
-                            fontWeight: 300,
-                          }}
-                        />
-                      </ListItem>
+                    {(upcomingEvents.anniversaries || []).map((event) => (
+                      <EventItem
+                        key={`anniversary-${event.id}`}
+                        type="anniversary"
+                        name={event.name}
+                        date={event.date}
+                        years={event.years}
+                      />
                     ))}
                   </List>
                 )}
@@ -1000,11 +1107,10 @@ const HrmDashboard = () => {
                   title="Pending Actions"
                   subtitle="Items requiring manager or admin review."
                   icon={
-                    <PlaylistAddCheckIcon
-                      sx={{
-                        color: theme.palette.warning.main,
-                        fontSize: 20,
-                      }}
+                    <AccentIcon
+                      icon={<PlaylistAddCheckIcon />}
+                      color={theme.palette.warning.main}
+                      small
                     />
                   }
                 />
@@ -1014,7 +1120,7 @@ const HrmDashboard = () => {
                 />
 
                 <Box sx={{ flexGrow: 1, overflowY: "auto", pr: 0.5, mt: 1 }}>
-                  {(hrmOverview.pending_leave_requests ?? 0) === 0 ? (
+                  {pendingLeave === 0 ? (
                     <EmptyState
                       title="All clear"
                       subtitle="There are no pending HR approvals right now."
@@ -1051,7 +1157,7 @@ const HrmDashboard = () => {
                         </ListItemIcon>
 
                         <ListItemText
-                          primary={`${hrmOverview.pending_leave_requests} Leave Request(s)`}
+                          primary={`${pendingLeave} Leave Request(s)`}
                           secondary="Awaiting approval"
                           primaryTypographyProps={{
                             fontSize: "0.76rem",
@@ -1061,7 +1167,7 @@ const HrmDashboard = () => {
                           secondaryTypographyProps={{
                             fontSize: "0.68rem",
                             color: "text.secondary",
-                            fontWeight: 300,
+                            fontWeight: 400,
                           }}
                         />
 
@@ -1087,7 +1193,7 @@ const HrmDashboard = () => {
                 ...styles.futureInsightCard,
               }}
             >
-              <Box sx={{ maxWidth: 400 }}>
+              <Box sx={{ maxWidth: 420 }}>
                 <Chip
                   label="Coming soon"
                   size="small"
@@ -1118,7 +1224,7 @@ const HrmDashboard = () => {
                     color: "text.secondary",
                     fontSize: "0.74rem",
                     lineHeight: 1.65,
-                    fontWeight: 300,
+                    fontWeight: 400,
                   }}
                 >
                   Future insights can include leave utilization, turnover risk,
@@ -1139,7 +1245,7 @@ const HrmDashboard = () => {
             mt: 2.5,
             textAlign: "right",
             fontSize: "0.68rem",
-            fontWeight: 300,
+            fontWeight: 400,
           }}
         >
           Last updated:{" "}

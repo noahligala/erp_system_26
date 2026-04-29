@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Sidebar, Menu, MenuItem, SubMenu } from "react-pro-sidebar";
-import { Box, Avatar, useTheme, IconButton } from "@mui/material";
+import { Box, Avatar, useTheme, IconButton, Tooltip } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { secureStore } from "../../utils/storage";
 
@@ -50,81 +50,359 @@ const getInitials = (name) => {
   return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
 };
 
-const resolveSelectedTitle = (path) => {
-  if (path === "/") return "Dashboard";
-  if (path.startsWith("/hrm") || path.startsWith("/team")) return "Human Resources";
-  if (path.startsWith("/recruitment")) return "Recruitment";
-  if (
-    path.startsWith("/accounts") ||
-    path.startsWith("/accounting") ||
-    path.startsWith("/bills")
-  ) {
-    return "Accounting";
-  }
-  if (path.startsWith("/sales")) return "Sales";
-  if (path.startsWith("/data")) return "Data";
-  if (
-    path.startsWith("/form") ||
-    path.startsWith("/calendar") ||
-    path.startsWith("/faq")
-  ) {
-    return "Pages";
-  }
-  if (
-    path.startsWith("/bar") ||
-    path.startsWith("/pie") ||
-    path.startsWith("/line") ||
-    path.startsWith("/geography") ||
-    path.startsWith("/pages/settings")
-  ) {
-    return "Charts";
+const routeMatches = (pathname, matcher) => {
+  if (Array.isArray(matcher)) {
+    return matcher.some((item) => routeMatches(pathname, item));
   }
 
-  return "Dashboard";
+  if (typeof matcher === "function") {
+    return matcher(pathname);
+  }
+
+  return pathname.startsWith(matcher);
 };
 
-const Item = ({ title, to, icon, selected, handleNavigate }) => {
+const MENU_GROUPS = [
+  {
+    section: "Main",
+    items: [
+      {
+        type: "item",
+        title: "Dashboard",
+        to: "/",
+        icon: <HomeOutlined fontSize="small" />,
+        match: (path) => path === "/",
+      },
+    ],
+  },
+  {
+    section: "People",
+    items: [
+      {
+        type: "submenu",
+        title: "Human Resources",
+        icon: <GroupWorkOutlined fontSize="small" />,
+        match: ["/hrm", "/team"],
+        children: [
+          {
+            title: "HRM Dashboard",
+            to: "/hrm/dashboard",
+            icon: <HomeOutlined fontSize="small" />,
+            match: (path) => path === "/hrm/dashboard",
+          },
+          {
+            title: "Employee List",
+            to: "/team",
+            icon: <PeopleOutlined fontSize="small" />,
+            match: ["/team", "/hrm/employee-profile"],
+          },
+          {
+            title: "Leave Management",
+            to: "/hrm/manage-leave",
+            icon: <BeachAccessOutlined fontSize="small" />,
+            match: "/hrm/manage-leave",
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        title: "Recruitment",
+        icon: <BusinessCenterOutlined fontSize="small" />,
+        match: "/recruitment",
+        children: [
+          {
+            title: "Job Openings",
+            to: "/recruitment/openings",
+            icon: <WorkOutlineOutlined fontSize="small" />,
+            match: "/recruitment/openings",
+          },
+          {
+            title: "Applicants",
+            to: "/recruitment/applicants",
+            icon: <AssignmentIndOutlined fontSize="small" />,
+            match: "/recruitment/applicants",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    section: "Operations",
+    items: [
+      {
+        type: "submenu",
+        title: "Accounting",
+        icon: <AccountBalanceOutlined fontSize="small" />,
+        match: ["/accounts", "/accounting", "/bills"],
+        children: [
+          {
+            title: "Accounts Dashboard",
+            to: "/accounts",
+            icon: <HomeOutlined fontSize="small" />,
+            match: (path) => path === "/accounts",
+          },
+          {
+            title: "Chart of Accounts",
+            to: "/accounts/chart-of-accounts",
+            icon: <AccountTreeOutlined fontSize="small" />,
+            match: "/accounts/chart-of-accounts",
+          },
+          {
+            title: "Journal Entries",
+            to: "/accounts/journal-entries",
+            icon: <ReceiptLongOutlined fontSize="small" />,
+            match: "/accounts/journal-entries",
+          },
+          {
+            title: "Expense Claims",
+            to: "/accounts/expenses",
+            icon: <RequestQuoteOutlined fontSize="small" />,
+            match: "/accounts/expenses",
+          },
+          {
+            title: "Supplier Bills",
+            to: "/accounts/bills",
+            icon: <ArticleOutlined fontSize="small" />,
+            match: "/accounts/bills",
+          },
+          {
+            title: "Bank Reconciliation",
+            to: "/accounts/reconciliation/bank",
+            icon: <SyncAltOutlined fontSize="small" />,
+            match: "/accounts/reconciliation/bank",
+          },
+          {
+            title: "Payroll",
+            to: "/accounts/payroll",
+            icon: <PaymentOutlined fontSize="small" />,
+            match: "/accounts/payroll",
+          },
+          {
+            title: "Payslips",
+            to: "/accounts/payslips",
+            icon: <ArticleOutlined fontSize="small" />,
+            match: "/accounts/payslips",
+          },
+          {
+            title: "Financial Reports",
+            to: "/accounts/reports",
+            icon: <AssessmentOutlined fontSize="small" />,
+            match: "/accounts/reports",
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        title: "Sales",
+        icon: <DataUsageOutlined fontSize="small" />,
+        match: ["/sales", "/accounts/inventory"],
+        children: [
+          {
+            title: "Invoices",
+            to: "/sales/invoices",
+            icon: <ReceiptOutlined fontSize="small" />,
+            match: (path) =>
+              path.startsWith("/sales/invoices") &&
+              !path.startsWith("/sales/invoices/reports"),
+          },
+          {
+            title: "Customer Payments",
+            to: "/sales/payments/customer-payments",
+            icon: <MoneyOutlined fontSize="small" />,
+            match: "/sales/payments/customer-payments",
+          },
+          {
+            title: "Invoice Reports",
+            to: "/sales/invoices/reports",
+            icon: <CardMembershipRounded fontSize="small" />,
+            match: "/sales/invoices/reports",
+          },
+          {
+            title: "Stock Adjustment",
+            to: "/accounts/inventory/stock_adjustment",
+            icon: <StorageOutlined fontSize="small" />,
+            match: "/accounts/inventory/stock_adjustment",
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        title: "System Data",
+        icon: <StorageOutlined fontSize="small" />,
+        match: ["/data", "/contacts"],
+        children: [
+          {
+            title: "Contacts",
+            to: "/contacts",
+            icon: <ContactsOutlined fontSize="small" />,
+            match: "/contacts",
+          },
+          {
+            title: "Imports",
+            to: "/data/imports",
+            icon: <UploadFileOutlined fontSize="small" />,
+            match: "/data/imports",
+          },
+          {
+            title: "Backups",
+            to: "/data/backups",
+            icon: <BackupOutlined fontSize="small" />,
+            match: "/data/backups",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    section: "Workspace",
+    items: [
+      {
+        type: "submenu",
+        title: "Pages",
+        icon: <ArticleOutlined fontSize="small" />,
+        match: ["/form", "/calendar", "/faq"],
+        children: [
+          {
+            title: "Profile",
+            to: "/form",
+            icon: <PersonOutlined fontSize="small" />,
+            match: "/form",
+          },
+          {
+            title: "Calendar",
+            to: "/calendar",
+            icon: <CalendarTodayOutlined fontSize="small" />,
+            match: "/calendar",
+          },
+          {
+            title: "FAQ",
+            to: "/faq",
+            icon: <HelpOutlineOutlined fontSize="small" />,
+            match: "/faq",
+          },
+        ],
+      },
+      {
+        type: "submenu",
+        title: "Charts",
+        icon: <BarChartOutlined fontSize="small" />,
+        match: ["/bar", "/pie", "/line", "/geography", "/pages/settings"],
+        children: [
+          {
+            title: "Bar Chart",
+            to: "/bar",
+            icon: <BarChartOutlined fontSize="small" />,
+            match: "/bar",
+          },
+          {
+            title: "Pie Chart",
+            to: "/pie",
+            icon: <PieChartOutlineOutlined fontSize="small" />,
+            match: "/pie",
+          },
+          {
+            title: "Line Chart",
+            to: "/line",
+            icon: <TimelineOutlined fontSize="small" />,
+            match: "/line",
+          },
+          {
+            title: "Geography",
+            to: "/geography",
+            icon: <MapOutlined fontSize="small" />,
+            match: "/geography",
+          },
+          {
+            title: "Settings",
+            to: "/pages/settings",
+            icon: <SettingsOutlined fontSize="small" />,
+            match: "/pages/settings",
+          },
+        ],
+      },
+    ],
+  },
+];
+
+const SidebarItem = ({ item, collapsed, pathname, onNavigate }) => {
   const theme = useTheme();
   const styles = theme.sidebar;
+  const selected = routeMatches(pathname, item.match);
 
-  return (
+  const content = (
     <MenuItem
       active={selected}
-      icon={icon}
-      onClick={() => handleNavigate(to)}
+      icon={item.icon}
+      onClick={() => onNavigate(item.to)}
       rootStyles={styles.itemRoot(selected)}
     >
-      <span className="menu-text">{title}</span>
+      <span className="menu-text">{item.title}</span>
     </MenuItem>
+  );
+
+  if (!collapsed) return content;
+
+  return (
+    <Tooltip title={item.title} placement="right" arrow>
+      <Box>{content}</Box>
+    </Tooltip>
   );
 };
 
-const AppSubMenu = ({
-  title,
-  icon,
-  active,
+const SidebarSubMenu = ({
+  item,
   collapsed,
+  pathname,
   setIsSidebar,
-  children,
+  onNavigate,
 }) => {
   const theme = useTheme();
   const styles = theme.sidebar;
+  const active = routeMatches(pathname, item.match);
 
-  const handleClick = () => {
+  const handleOpenWhenCollapsed = () => {
     if (collapsed) {
       setIsSidebar(true);
     }
   };
 
-  return (
+  const submenu = (
     <SubMenu
-      label={<span className="menu-text">{title}</span>}
-      icon={icon}
-      onClick={handleClick}
+      label={<span className="menu-text">{item.title}</span>}
+      icon={item.icon}
       rootStyles={styles.submenuRoot(active)}
+      onClick={handleOpenWhenCollapsed}
     >
-      {children}
+      {item.children.map((child) => (
+        <SidebarItem
+          key={child.to}
+          item={child}
+          collapsed={collapsed}
+          pathname={pathname}
+          onNavigate={onNavigate}
+        />
+      ))}
     </SubMenu>
+  );
+
+  if (!collapsed) return submenu;
+
+  return (
+    <Tooltip title={item.title} placement="right" arrow>
+      <Box>{submenu}</Box>
+    </Tooltip>
+  );
+};
+
+const SidebarGroupTitle = ({ title }) => {
+  const theme = useTheme();
+  const styles = theme.sidebar;
+
+  return (
+    <Box sx={styles.groupLabel}>
+      <Box component="span">{title}</Box>
+      <Box sx={styles.groupRule} />
+    </Box>
   );
 };
 
@@ -138,16 +416,14 @@ const SidebarComponent = ({ isSidebar, setIsSidebar }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(!isSidebar);
   const [textVisible, setTextVisible] = useState(isSidebar);
 
-  const selectedTitle = useMemo(
-    () => resolveSelectedTitle(location.pathname),
-    [location.pathname]
-  );
-
   const user = useMemo(() => {
-    return secureStore.get("user_data") || {
-      name: "User",
-      profileImage: null,
-    };
+    return (
+      secureStore.get("user_data") || {
+        name: "User",
+        company_role: "User",
+        profileImage: null,
+      }
+    );
   }, []);
 
   const initials = useMemo(() => getInitials(user.name), [user.name]);
@@ -159,12 +435,12 @@ const SidebarComponent = ({ isSidebar, setIsSidebar }) => {
       setTextVisible(false);
       timer = setTimeout(() => {
         setInternalCollapsed(true);
-      }, 90);
+      }, 80);
     } else {
       setInternalCollapsed(false);
       timer = setTimeout(() => {
         setTextVisible(true);
-      }, 90);
+      }, 80);
     }
 
     return () => clearTimeout(timer);
@@ -190,25 +466,19 @@ const SidebarComponent = ({ isSidebar, setIsSidebar }) => {
 
   const collapsed = internalCollapsed;
 
-  const toggleSidebar = useCallback(() => {
-    setIsSidebar((prev) => !prev);
-  }, [setIsSidebar]);
+  const toggleSidebar = useCallback(
+    (event) => {
+      event?.stopPropagation?.();
+      setIsSidebar((prev) => !prev);
+    },
+    [setIsSidebar]
+  );
 
   const handleNavigate = useCallback(
     (to) => {
       navigate(to);
     },
     [navigate]
-  );
-
-  const isSelected = useCallback(
-    (pathPrefix) => location.pathname.startsWith(pathPrefix),
-    [location.pathname]
-  );
-
-  const isExactlySelected = useCallback(
-    (path) => location.pathname === path,
-    [location.pathname]
   );
 
   return (
@@ -223,18 +493,27 @@ const SidebarComponent = ({ isSidebar, setIsSidebar }) => {
         collapsed={collapsed}
         backgroundColor={theme.palette.background.paper}
         width={collapsed ? `${styles.collapsedWidth}px` : `${styles.width}px`}
+        collapsedWidth={`${styles.collapsedWidth}px`}
       >
-        <Menu iconShape="square">
+        <Menu closeOnClick>
           <MenuItem
             onClick={toggleSidebar}
-            icon={collapsed ? <MenuOutlined /> : undefined}
+            icon={
+              collapsed ? (
+                <MenuOutlined fontSize="small" />
+              ) : (
+                <Box sx={styles.brandMark}>L</Box>
+              )
+            }
             style={styles.logoMenuItem}
             rootStyles={styles.logoMenuRoot}
           >
             <Box sx={styles.logoBox}>
-              <span className="logo-text menu-text" style={styles.logoText}>
-                LigcoSync
-              </span>
+              <Box display="flex" alignItems="center" minWidth={0}>
+                <Box component="span" className="logo-text menu-text" sx={styles.logoText}>
+                  LigcoSync
+                </Box>
+              </Box>
 
               {!collapsed && (
                 <IconButton onClick={toggleSidebar} sx={styles.toggleButton}>
@@ -257,313 +536,71 @@ const SidebarComponent = ({ isSidebar, setIsSidebar }) => {
                   <Avatar sx={styles.avatarLarge}>{initials}</Avatar>
                 )}
 
-                <span className="menu-text" style={styles.userName}>
-                  {user.name || "User"}
-                </span>
+                <Box minWidth={0}>
+                  <Box component="span" className="menu-text" sx={styles.userName}>
+                    {user.name || "User"}
+                  </Box>
+
+                  <Box component="span" className="menu-text" sx={styles.userRole}>
+                    {user.company_role || "User"}
+                  </Box>
+                </Box>
               </Box>
             ) : (
               <Box display="flex" justifyContent="center" alignItems="center" py={1}>
-                {user.profileImage ? (
-                  <Avatar
-                    alt={user.name}
-                    src={user.profileImage}
-                    sx={styles.avatarSmall}
-                  />
-                ) : (
-                  <Avatar sx={styles.avatarSmall}>{initials}</Avatar>
-                )}
+                <Tooltip title={user.name || "User"} placement="right" arrow>
+                  {user.profileImage ? (
+                    <Avatar
+                      alt={user.name}
+                      src={user.profileImage}
+                      sx={styles.avatarSmall}
+                    />
+                  ) : (
+                    <Avatar sx={styles.avatarSmall}>{initials}</Avatar>
+                  )}
+                </Tooltip>
               </Box>
             )}
           </Box>
 
-          <Box sx={styles.menuWrap(collapsed)}>
-            <Item
-              title="Dashboard"
-              to="/"
-              icon={<HomeOutlined />}
-              selected={isExactlySelected("/")}
-              handleNavigate={handleNavigate}
-            />
+          <Box sx={styles.menuWrap}>
+            {MENU_GROUPS.map((group) => (
+              <Box key={group.section} sx={styles.groupBlock}>
+                {!collapsed && <SidebarGroupTitle title={group.section} />}
 
-            <AppSubMenu
-              title="Human Resources"
-              icon={<GroupWorkOutlined />}
-              active={selectedTitle === "Human Resources"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="HRM Dashboard"
-                to="/hrm/dashboard"
-                icon={<HomeOutlined />}
-                selected={isExactlySelected("/hrm/dashboard")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Employee List"
-                to="/team"
-                icon={<PeopleOutlined />}
-                selected={isSelected("/team") || isSelected("/hrm/employee-profile")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Leave Management"
-                to="/hrm/manage-leave"
-                icon={<BeachAccessOutlined />}
-                selected={isSelected("/hrm/manage-leave")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
-
-            <AppSubMenu
-              title="Recruitment"
-              icon={<BusinessCenterOutlined />}
-              active={selectedTitle === "Recruitment"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="Job Openings"
-                to="/recruitment/openings"
-                icon={<WorkOutlineOutlined />}
-                selected={isSelected("/recruitment/openings")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Applicants"
-                to="/recruitment/applicants"
-                icon={<AssignmentIndOutlined />}
-                selected={isSelected("/recruitment/applicants")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
-
-            <AppSubMenu
-              title="Accounting"
-              icon={<AccountBalanceOutlined />}
-              active={selectedTitle === "Accounting"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="Accounts Dashboard"
-                to="/accounts"
-                icon={<HomeOutlined />}
-                selected={isExactlySelected("/accounts")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Chart of Accounts"
-                to="/accounts/chart-of-accounts"
-                icon={<AccountTreeOutlined />}
-                selected={isSelected("/accounts/chart-of-accounts")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Journal Entries"
-                to="/accounts/journal-entries"
-                icon={<ReceiptLongOutlined />}
-                selected={isSelected("/accounts/journal-entries")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Expense Claims"
-                to="/accounts/expenses"
-                icon={<RequestQuoteOutlined />}
-                selected={isSelected("/accounts/expenses")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Supplier Bills (AP)"
-                to="/accounts/bills"
-                icon={<ArticleOutlined />}
-                selected={isSelected("/accounts/bills")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Bank Reconciliation"
-                to="/accounts/reconciliation/bank"
-                icon={<SyncAltOutlined />}
-                selected={isSelected("/accounts/reconciliation/bank")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Payroll"
-                to="/accounts/payroll"
-                icon={<PaymentOutlined />}
-                selected={isSelected("/accounts/payroll")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Payslips"
-                to="/accounts/payslips"
-                icon={<ArticleOutlined />}
-                selected={isSelected("/accounts/payslips")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Financial Reports"
-                to="/accounts/reports"
-                icon={<AssessmentOutlined />}
-                selected={isSelected("/accounts/reports")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
-
-            <AppSubMenu
-              title="Sales"
-              icon={<DataUsageOutlined />}
-              active={selectedTitle === "Sales"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="Invoices"
-                to="/sales/invoices"
-                icon={<ReceiptOutlined />}
-                selected={
-                  isSelected("/sales/invoices") &&
-                  !isSelected("/sales/invoices/reports")
-                }
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Customer Payments"
-                to="/sales/payments/customer-payments"
-                icon={<MoneyOutlined />}
-                selected={isSelected("/sales/payments/customer-payments")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Invoice Reports"
-                to="/sales/invoices/reports"
-                icon={<CardMembershipRounded />}
-                selected={isSelected("/sales/invoices/reports")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Stock Adjustment"
-                to="/accounts/inventory/stock_adjustment"
-                icon={<StorageOutlined />}
-                selected={isSelected("/accounts/inventory/stock_adjustment")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
-
-            <AppSubMenu
-              title="System Data"
-              icon={<StorageOutlined />}
-              active={selectedTitle === "Data"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="Contacts"
-                to="/contacts"
-                icon={<ContactsOutlined />}
-                selected={isSelected("/contacts")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Imports"
-                to="/data/imports"
-                icon={<UploadFileOutlined />}
-                selected={isSelected("/data/imports")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Backups"
-                to="/data/backups"
-                icon={<BackupOutlined />}
-                selected={isSelected("/data/backups")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
-
-            <AppSubMenu
-              title="Pages"
-              icon={<ArticleOutlined />}
-              active={selectedTitle === "Pages"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="Profile"
-                to="/form"
-                icon={<PersonOutlined />}
-                selected={isSelected("/form")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Calendar"
-                to="/calendar"
-                icon={<CalendarTodayOutlined />}
-                selected={isSelected("/calendar")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="FAQ"
-                to="/faq"
-                icon={<HelpOutlineOutlined />}
-                selected={isSelected("/faq")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
-
-            <AppSubMenu
-              title="Charts"
-              icon={<BarChartOutlined />}
-              active={selectedTitle === "Charts"}
-              collapsed={collapsed}
-              setIsSidebar={setIsSidebar}
-            >
-              <Item
-                title="Bar Chart"
-                to="/bar"
-                icon={<BarChartOutlined />}
-                selected={isSelected("/bar")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Pie Chart"
-                to="/pie"
-                icon={<PieChartOutlineOutlined />}
-                selected={isSelected("/pie")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Line Chart"
-                to="/line"
-                icon={<TimelineOutlined />}
-                selected={isSelected("/line")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Geography"
-                to="/geography"
-                icon={<MapOutlined />}
-                selected={isSelected("/geography")}
-                handleNavigate={handleNavigate}
-              />
-              <Item
-                title="Settings"
-                to="/pages/settings"
-                icon={<SettingsOutlined />}
-                selected={isSelected("/pages/settings")}
-                handleNavigate={handleNavigate}
-              />
-            </AppSubMenu>
+                {group.items.map((item) =>
+                  item.type === "submenu" ? (
+                    <SidebarSubMenu
+                      key={item.title}
+                      item={item}
+                      collapsed={collapsed}
+                      pathname={location.pathname}
+                      setIsSidebar={setIsSidebar}
+                      onNavigate={handleNavigate}
+                    />
+                  ) : (
+                    <SidebarItem
+                      key={item.to}
+                      item={item}
+                      collapsed={collapsed}
+                      pathname={location.pathname}
+                      onNavigate={handleNavigate}
+                    />
+                  )
+                )}
+              </Box>
+            ))}
           </Box>
         </Menu>
 
         {!collapsed && (
           <Box sx={styles.footer}>
-            <span className="menu-text" style={styles.footerBrand}>
+            <Box component="span" className="menu-text" sx={styles.footerBrand}>
               LigcoSync
-            </span>
-            <span className="menu-text" style={styles.footerVersion}>
+            </Box>
+            <Box component="span" className="menu-text" sx={styles.footerVersion}>
               Version 0.0.1
-            </span>
+            </Box>
           </Box>
         )}
       </Sidebar>
