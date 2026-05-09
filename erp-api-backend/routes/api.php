@@ -1,94 +1,140 @@
 <?php
 
-use App\Http\Controllers\Accounts\FixedAssetController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Platform\SignupController;
+
 use App\Http\Controllers\CRM\CustomerController;
 use App\Http\Controllers\CRM\SupplierController;
+
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\JobTitleController;
 use App\Http\Controllers\EmployeeController;
-use App\Http\Controllers\Accounts\AllowanceController;
-use App\Http\Controllers\Accounts\LoanController;
-use App\Http\Controllers\Accounts\AdvanceController;
-use App\Http\Controllers\Inventory\ProductController;
-use App\Http\Controllers\Accounts\PayslipController;
-use App\Http\Controllers\Accounts\PayrollController;
-use App\Http\Controllers\Purchasing\PurchaseOrderController;
-use App\Http\Controllers\Sales\SalesController;
-use App\Http\Controllers\Accounts\AccountingController;
-use App\Http\Controllers\Accounts\BankStatementController;
-use App\Http\Controllers\Accounts\BillPaymentController;
-use App\Http\Controllers\Accounts\InvoiceController;
-use App\Http\Controllers\Dashboard\DashboardController;
-use App\Http\Controllers\CompanyController;
-use App\Models\SubscriptionPlan;
 use App\Http\Controllers\LeaveController;
 use App\Http\Controllers\JobOpeningController;
 use App\Http\Controllers\ApplicantController;
-use App\Http\Controllers\Accounts\CustomerPaymentController;
-use App\Http\Controllers\Accounts\ExpenseController;
-use App\Http\Controllers\Accounts\ReportsController;
-use App\Http\Controllers\Accounts\SupplierBillController;
-use App\Http\Controllers\Banking\MpesaCallbackController;
-use App\Http\Controllers\Inventory\StockAdjustmentController;
-use App\Http\Controllers\Calendar\CalendarController;
-use App\Http\Controllers\Calendar\CalendarFeedController;
-use App\Http\Controllers\Calendar\CalendarEventController;
 use App\Http\Controllers\PublicCareersController;
 
-// --- PUBLIC ROUTES ---
+use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\Dashboard\DashboardController;
+
+use App\Http\Controllers\Accounts\AccountingController;
+use App\Http\Controllers\Accounts\AllowanceController;
+use App\Http\Controllers\Accounts\AdvanceController;
+use App\Http\Controllers\Accounts\BankStatementController;
+use App\Http\Controllers\Accounts\BillPaymentController;
+use App\Http\Controllers\Accounts\BudgetController;
+use App\Http\Controllers\Accounts\CustomerPaymentController;
+use App\Http\Controllers\Accounts\ExpenseController;
+use App\Http\Controllers\Accounts\FixedAssetController;
+use App\Http\Controllers\Accounts\InvoiceController;
+use App\Http\Controllers\Accounts\JournalEntryController;
+use App\Http\Controllers\Accounts\LoanController;
+use App\Http\Controllers\Accounts\PayrollController;
+use App\Http\Controllers\Accounts\PayslipController;
+use App\Http\Controllers\Accounts\ReportsController;
+use App\Http\Controllers\Accounts\SupplierBillController;
+
+use App\Http\Controllers\Inventory\ProductController;
+use App\Http\Controllers\Inventory\StockAdjustmentController;
+
+use App\Http\Controllers\Purchasing\PurchaseOrderController;
+use App\Http\Controllers\Sales\SalesController;
+
+use App\Http\Controllers\Banking\MpesaCallbackController;
+
+use App\Http\Controllers\Calendar\CalendarController;
+use App\Http\Controllers\Calendar\CalendarFeedController;
+
+use App\Models\SubscriptionPlan;
+
+/*
+|--------------------------------------------------------------------------
+| Public Routes
+|--------------------------------------------------------------------------
+*/
+
 Route::get('/plans', fn () => SubscriptionPlan::all());
+
 Route::post('/register-subscribe', [SignupController::class, 'registerAndSubscribe']);
 Route::post('/login', [LoginController::class, 'login']);
 
-//--Job Listings and Applicants (Publicly Accessible)---//
-// 💡 FIX: Wrapped in the 'public' prefix group
+/*
+|--------------------------------------------------------------------------
+| Public Careers Routes
+|--------------------------------------------------------------------------
+*/
+
 Route::prefix('public')->group(function () {
-    // 1. Get open jobs for a specific company
-    Route::get('/companies/{company_id}/jobs', [App\Http\Controllers\PublicCareersController::class, 'index']);
-
-    // 2. Get a specific job detail
-    Route::get('/companies/{company_id}/jobs/{job_opening_id}', [App\Http\Controllers\PublicCareersController::class, 'show']);
-
-    // 3. Submit a new application
-    Route::post('/apply', [App\Http\Controllers\PublicCareersController::class, 'storeApplication']);
+    Route::get('/companies/{company_id}/jobs', [PublicCareersController::class, 'index']);
+    Route::get('/companies/{company_id}/jobs/{job_opening_id}', [PublicCareersController::class, 'show']);
+    Route::post('/apply', [PublicCareersController::class, 'storeApplication']);
 });
-//-- End of Job Listings and Applicants --//
 
-// --- PROTECTED ROUTES ---
+/*
+|--------------------------------------------------------------------------
+| Protected Routes
+|--------------------------------------------------------------------------
+*/
+
 Route::middleware('auth:sanctum')->group(function () {
+    /*
+    |--------------------------------------------------------------------------
+    | Auth
+    |--------------------------------------------------------------------------
+    */
 
-    // --- AUTH ROUTES ---
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/user', fn (Request $request) => $request->user());
-    Route::post('/refresh', [LoginController::class, 'refreshToken']);
 
-    // CRM
+    // Keep both paths because your frontend may call either one.
+    Route::post('/refresh', [LoginController::class, 'refreshToken']);
+    Route::post('/auth/refresh', [LoginController::class, 'refreshToken']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | CRM
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('customers', CustomerController::class);
     Route::apiResource('suppliers', SupplierController::class);
 
-    // HRM Core
+    /*
+    |--------------------------------------------------------------------------
+    | HRM Core
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('departments', DepartmentController::class);
     Route::apiResource('job-titles', JobTitleController::class);
 
-    // Employee Specific Sub-Routes
     Route::post('/employees/{employee}/loans', [LoanController::class, 'store']);
     Route::post('/employees/{employee}/advances', [AdvanceController::class, 'store']);
     Route::get('/employees/{employee}/leave-balance', [LeaveController::class, 'getEmployeeLeaveBalance']);
     Route::get('/employees/{employee}/leave-history', [LeaveController::class, 'getEmployeeLeaveHistory']);
 
-    // Employee Resource
     Route::apiResource('employees', EmployeeController::class);
 
-    // --- RECRUITMENT ROUTES ---
+    /*
+    |--------------------------------------------------------------------------
+    | Recruitment
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('job-openings', JobOpeningController::class);
     Route::get('/applicants/{applicant}/resume', [ApplicantController::class, 'downloadResume']);
+    Route::post('/applicants/{applicant}/hire', [ApplicantController::class, 'hire']);
     Route::apiResource('applicants', ApplicantController::class);
 
-    // Leave Management
+    /*
+    |--------------------------------------------------------------------------
+    | Leave Management
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('/leave-types', [LeaveController::class, 'getLeaveTypes']);
     Route::get('/leave-balance', [LeaveController::class, 'getUserLeaveBalance']);
     Route::post('/leave-requests', [LeaveController::class, 'storeLeaveRequest']);
@@ -97,50 +143,83 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/leave-requests/{leaveRequest}/approve', [LeaveController::class, 'approve']);
     Route::patch('/leave-requests/{leaveRequest}/reject', [LeaveController::class, 'reject']);
 
-    // Accounts / Payroll
+    /*
+    |--------------------------------------------------------------------------
+    | Payroll / Payslips / Allowances
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('allowances', AllowanceController::class);
     Route::apiResource('payslips', PayslipController::class);
 
-    // --- Payroll Routes ---
     Route::prefix('payroll')->group(function () {
         Route::post('/generate', [PayrollController::class, 'generate'])->name('payroll.generate');
         Route::post('/close-month', [PayrollController::class, 'closeMonth'])->name('payroll.close');
+
         Route::get('/reports', [PayrollController::class, 'index'])->name('payroll.reports.index');
+
+        Route::get('/reports/summary', [PayrollController::class, 'getMonthlySummary'])
+            ->name('payroll.reports.summary');
+
         Route::get('/reports/{payrollArchive}', [PayrollController::class, 'show'])
             ->where('payrollArchive', '[0-9]+')
             ->name('payroll.reports.show');
-        Route::get('/reports/summary', [PayrollController::class, 'getMonthlySummary'])->name('payroll.reports.summary');
     });
 
-    // Inventory
-    Route::apiResource('products', ProductController::class);
+    /*
+    |--------------------------------------------------------------------------
+    | Inventory
+    |--------------------------------------------------------------------------
+    */
 
-    // Stock Adjustment Resource Route
+    Route::apiResource('products', ProductController::class);
     Route::apiResource('stock-adjustments', StockAdjustmentController::class);
 
-    // Purchasing
+    /*
+    |--------------------------------------------------------------------------
+    | Purchasing
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('purchase-orders', PurchaseOrderController::class)->except(['destroy']);
 
-    // Sales
+    /*
+    |--------------------------------------------------------------------------
+    | Sales
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('sales', SalesController::class)->except(['destroy']);
 
-    // --- Invoicing (Accounts Receivable) ---
-    Route::apiResource('invoices', InvoiceController::class);
+    /*
+    |--------------------------------------------------------------------------
+    | Invoices / Accounts Receivable
+    |--------------------------------------------------------------------------
+    */
 
-    // Helper route for data correction
+    Route::apiResource('invoices', InvoiceController::class);
     Route::post('/invoices/recalculate-balances', [InvoiceController::class, 'recalculateBalances']);
 
-    // --- INVOICE REPORTS ---
     Route::prefix('invoices/reports')->group(function () {
+        // Keep this route because your frontend currently calls /invoices/reports/ar-aging.
         Route::get('/ar-aging', [ReportsController::class, 'getArAging']);
         Route::get('/all', [ReportsController::class, 'getInvoiceList']);
     });
 
-    // --- Expense Claims ---
-    Route::apiResource('expenses', ExpenseController::class)
-        ->except(['show']);
+    /*
+    |--------------------------------------------------------------------------
+    | Expense Claims
+    |--------------------------------------------------------------------------
+    */
 
-    // --- Customer Payments (AR) ---
+    Route::apiResource('expenses', ExpenseController::class)->except(['show']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customer Payments / AR Receipts
+    |--------------------------------------------------------------------------
+    */
+
     Route::prefix('payments')->group(function () {
         Route::get('/', [CustomerPaymentController::class, 'index']);
         Route::post('/', [CustomerPaymentController::class, 'store']);
@@ -148,10 +227,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [CustomerPaymentController::class, 'destroy']);
     });
 
-    // --- Supplier Bills (AP) ---
+    /*
+    |--------------------------------------------------------------------------
+    | Supplier Bills / AP
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('bills', SupplierBillController::class);
 
-    // Bill Payment routes
     Route::prefix('bill-payments')->group(function () {
         Route::get('/', [BillPaymentController::class, 'index']);
         Route::post('/', [BillPaymentController::class, 'store']);
@@ -159,54 +242,133 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{billPayment}', [BillPaymentController::class, 'destroy']);
     });
 
-    // Accounting
+    /*
+    |--------------------------------------------------------------------------
+    | Accounting / Finance Department
+    |--------------------------------------------------------------------------
+    */
+
     Route::prefix('accounting')->group(function () {
-        // Core Reports
+        /*
+        |--------------------------------------------------------------------------
+        | Core Financial Reports
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/chart-of-accounts', [AccountingController::class, 'chartOfAccounts']);
         Route::get('/balance-sheet', [AccountingController::class, 'getBalanceSheet']);
         Route::get('/profit-loss', [AccountingController::class, 'getProfitAndLoss']);
         Route::get('/trial-balance', [AccountingController::class, 'getTrialBalance']);
-
-        // 💡 FIX: ADD CASH FLOW STATEMENT ROUTE
+        Route::get('/general-ledger', [AccountingController::class, 'getGeneralLedger']);
         Route::get('/cash-flow-statement', [AccountingController::class, 'generateCashFlowStatement']);
 
-        Route::get('/general-ledger', [AccountingController::class, 'getGeneralLedger']);
-        Route::get('/key-ratios', [AccountingController::class, 'getKeyRatios']);
+        /*
+        |--------------------------------------------------------------------------
+        | Finance Dashboard Endpoints
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/dashboard-summary', [AccountingController::class, 'getDashboardSummary']);
         Route::get('/financial-trends', [AccountingController::class, 'getFinancialTrends']);
+        Route::get('/key-ratios', [AccountingController::class, 'getKeyRatios']);
+
+        // Use getAlerts if that is already your controller method.
+        // If you renamed it to getDashboardAlerts, change this method name accordingly.
         Route::get('/alerts', [AccountingController::class, 'getAlerts']);
 
-        // Report Archives
+        Route::get('/period-status', [AccountingController::class, 'getPeriodStatus']);
+        Route::get('/finance-dashboard', [AccountingController::class, 'getFinanceDashboardBundle']);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Dashboard-Friendly Report Summaries
+        |--------------------------------------------------------------------------
+        */
+
+        Route::prefix('reports')->group(function () {
+            Route::get('/ar-aging', [AccountingController::class, 'getAccountsReceivableAging']);
+            Route::get('/ap-aging', [AccountingController::class, 'getAccountsPayableAging']);
+            Route::get('/cashflow-summary', [AccountingController::class, 'getCashflowSummary']);
+            Route::get('/budget-vs-actual', [AccountingController::class, 'getBudgetSummary']);
+            Route::get('/tax-summary', [AccountingController::class, 'getTaxSummary']);
+        });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Report Archives
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/archived-reports', [AccountingController::class, 'listArchivedReports']);
         Route::get('/archived-reports/{archivedReport}', [AccountingController::class, 'showArchivedReport']);
 
-        Route::apiResource('assets', FixedAssetController::class);
-        Route::apiResource('journal-entries', \App\Http\Controllers\Accounts\JournalEntryController::class);
+        /*
+        |--------------------------------------------------------------------------
+        | Fixed Assets
+        |--------------------------------------------------------------------------
+        */
 
-        // Bank Reconciliation
+        Route::apiResource('assets', FixedAssetController::class);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Journal Entries
+        |--------------------------------------------------------------------------
+        */
+
+        Route::apiResource('journal-entries', JournalEntryController::class);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Bank Reconciliation
+        |--------------------------------------------------------------------------
+        */
+
         Route::post('/bank-statements/upload', [BankStatementController::class, 'uploadStatement']);
         Route::get('/bank-statements', [BankStatementController::class, 'index']);
         Route::get('/unreconciled-lines', [BankStatementController::class, 'getUnreconciledLedgerLines']);
         Route::post('/reconcile', [BankStatementController::class, 'reconcileTransactions']);
 
-        // Mpesa
+        /*
+        |--------------------------------------------------------------------------
+        | Mpesa Banking Callbacks / Results
+        |--------------------------------------------------------------------------
+        */
+
         Route::post('/mpesa/balance-result', [MpesaCallbackController::class, 'balanceResult']);
         Route::post('/mpesa/status-result', [MpesaCallbackController::class, 'statusResult']);
         Route::post('/mpesa/timeout', [MpesaCallbackController::class, 'timeout']);
 
-         // Budgeting
-        Route::get('/budgets', [\App\Http\Controllers\Accounts\BudgetController::class, 'index']);
-        Route::post('/budgets', [\App\Http\Controllers\Accounts\BudgetController::class, 'store']);
-        Route::delete('/budgets/{id}', [\App\Http\Controllers\Accounts\BudgetController::class, 'destroy']);
+        /*
+        |--------------------------------------------------------------------------
+        | Budgets
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/budgets', [BudgetController::class, 'index']);
+        Route::post('/budgets', [BudgetController::class, 'store']);
+        Route::delete('/budgets/{id}', [BudgetController::class, 'destroy']);
+
+        // Keep old route for existing pages.
         Route::get('/budget-vs-actuals', [AccountingController::class, 'getBudgetVsActuals']);
     });
 
-    // Company / Settings
+    /*
+    |--------------------------------------------------------------------------
+    | Company / Settings
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('/company', [CompanyController::class, 'show']);
     Route::post('/company/users', [CompanyController::class, 'addUser']);
     Route::post('/company/update', [CompanyController::class, 'update']);
 
-    // Dashboard
+    /*
+    |--------------------------------------------------------------------------
+    | Main Dashboard
+    |--------------------------------------------------------------------------
+    */
+
     Route::prefix('dashboard')->controller(DashboardController::class)->group(function () {
         Route::get('/', '__invoke');
         Route::get('/financial', 'financialSummary');
@@ -217,35 +379,51 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/system', 'systemHealth');
     });
 
+    /*
+    |--------------------------------------------------------------------------
+    | Calendar
+    |--------------------------------------------------------------------------
+    */
+
     Route::prefix('calendar')->group(function () {
         Route::get('/events', [CalendarController::class, 'index']);
         Route::post('/events', [CalendarController::class, 'store']);
         Route::get('/events/{event}', [CalendarController::class, 'show']);
         Route::put('/events/{event}', [CalendarController::class, 'update']);
         Route::delete('/events/{event}', [CalendarController::class, 'destroy']);
-        Route::get('/feed', [CalendarFeedController::class, 'index']);
-        Route::patch('events/{event}/done', [CalendarController::class, 'toggleDone']);
 
-
-        // Drag/drop + resize support (optional but clean)
+        Route::patch('/events/{event}/done', [CalendarController::class, 'toggleDone']);
         Route::patch('/events/{event}/move', [CalendarController::class, 'move']);
         Route::patch('/events/{event}/resize', [CalendarController::class, 'resize']);
+
+        Route::get('/feed', [CalendarFeedController::class, 'index']);
     });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('/notifications', function (Request $request) {
         return [
             'ok' => true,
-            'data' => $request->user()->notifications()->latest()->limit(50)->get(),
+            'data' => $request->user()
+                ->notifications()
+                ->latest()
+                ->limit(50)
+                ->get(),
         ];
     });
 
     Route::post('/notifications/{id}/read', function (Request $request, string $id) {
-        $n = $request->user()->notifications()->where('id', $id)->firstOrFail();
-        $n->markAsRead();
+        $notification = $request->user()
+            ->notifications()
+            ->where('id', $id)
+            ->firstOrFail();
+
+        $notification->markAsRead();
+
         return ['ok' => true];
     });
-
-    Route::middleware('auth:sanctum')->post('/applicants/{applicant}/hire', [ApplicantController::class, 'hire']);
-    Route::apiResource('applicants', ApplicantController::class); // Your existing resource route
-
 });

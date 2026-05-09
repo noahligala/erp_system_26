@@ -20,38 +20,34 @@ class AccountingController extends Controller
 {
     use AuthorizesRequests;
 
-    /**
-     * The accounting report service instance.
-     */
     protected AccountingReportService $reportService;
 
-    /**
-     * Create a new controller instance.
-     * Dependency injection will automatically provide the service.
-     */
     public function __construct(AccountingReportService $reportService)
     {
         $this->reportService = $reportService;
     }
 
-    /**
-     * Helper method to set up the service context.
-     * This ensures the service knows which company we are reporting on.
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Shared Helpers
+    |--------------------------------------------------------------------------
+    */
+
     protected function setupService(): void
     {
         if (!auth()->check() || !auth()->user()->company) {
             throw new \Exception('User is not authenticated or does not belong to a company.');
         }
-        // Set the company context for the service ONCE for this request
+
         $this->reportService->setCompany(auth()->user()->company);
     }
 
-    /**
-     * Helper to archive the generated report data.
-     */
-    protected function archiveReport(string $reportType, ?Carbon $startDate, Carbon $endDate, array $reportData)
-    {
+    protected function archiveReport(
+        string $reportType,
+        ?Carbon $startDate,
+        Carbon $endDate,
+        array $reportData
+    ): ArchivedReport {
         return ArchivedReport::create([
             'company_id' => auth()->user()->company_id,
             'report_type' => $reportType,
@@ -63,119 +59,68 @@ class AccountingController extends Controller
         ]);
     }
 
-    // ------------------------------------------------------------------------
-    // CORE FINANCIAL REPORTS
-    // ------------------------------------------------------------------------
+    private function dashboardPeriod(Request $request): array
+    {
+        $validated = $request->validate([
+            'start_date' => 'nullable|date_format:Y-m-d',
+            'end_date' => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
+            'months' => 'nullable|integer|min:1|max:36',
+        ]);
 
-    /**
-     * Generate a Trial Balance report.
-     */
+        $endDate = isset($validated['end_date'])
+            ? Carbon::parse($validated['end_date'])->endOfDay()
+            : now()->endOfDay();
+
+        $startDate = isset($validated['start_date'])
+            ? Carbon::parse($validated['start_date'])->startOfDay()
+            : $endDate->copy()->startOfMonth();
+
+        return [$startDate, $endDate, $validated];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Core Financial Reports
+    |--------------------------------------------------------------------------
+    */
+
     public function getTrialBalance(Request $request)
     {
         Gate::authorize('view-financial-reports');
 
         try {
             $this->setupService();
-            $validated = $request->validate(['end_date' => 'required|date_format:Y-m-d']);
+
+            $validated = $request->validate([
+                'end_date' => 'required|date_format:Y-m-d',
+            ]);
+
             $endDate = Carbon::parse($validated['end_date'])->endOfDay();
 
             $reportData = $this->reportService->generateTrialBalance($endDate);
+
             $this->archiveReport('Trial Balance', null, $endDate, $reportData);
 
             return response()->json($reportData);
         } catch (Throwable $e) {
-            Log::error('Trial Balance generation failed: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred while generating the trial balance.'], 500);
+            Log::error('Trial Balance generation failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while generating the trial balance.',
+            ], 500);
         }
     }
 
-    /**
-     * Generate a Profit & Loss (Income Statement) report.
-     */
     public function getProfitAndLoss(Request $request)
     {
         Gate::authorize('view-financial-reports');
 
         try {
             $this->setupService();
+
             $validated = $request->validate([
-                'start_date' => 'required|date_format:Y-m-d',
-                'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date'
-            ]);
-
-            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
-            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
-
-            $reportData = $this->reportService->generateProfitAndLoss($startDate, $endDate);
-            $this->archiveReport('Profit & Loss', $startDate, $endDate, $reportData);
-
-            return response()->json($reportData);
-        } catch (Throwable $e) {
-            Log::error('Profit & Loss generation failed: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred while generating the Profit & Loss statement.'], 500);
-        }
-    }
-
-    /**
-     * Generate a Balance Sheet report.
-     */
-    public function getBalanceSheet(Request $request)
-    {
-        Gate::authorize('view-financial-reports');
-
-        try {
-            $this->setupService();
-            $validated = $request->validate(['end_date' => 'required|date_format:Y-m-d']);
-            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
-
-            $reportData = $this->reportService->generateBalanceSheet($endDate);
-            $this->archiveReport('Balance Sheet', null, $endDate, $reportData);
-
-            return response()->json($reportData);
-        } catch (Throwable $e) {
-            Log::error('Balance sheet generation failed: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred.'], 500);
-        }
-    }
-
-    /**
-     * Generate the Statement of Cash Flows (Indirect Method).
-     */
-    public function generateCashFlowStatement(Request $request)
-    {
-        Gate::authorize('view-financial-reports');
-
-        try {
-            $this->setupService();
-            $validated = $request->validate([
-                'start_date' => 'required|date_format:Y-m-d',
-                'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date'
-            ]);
-
-            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
-            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
-
-            $reportData = $this->reportService->generateCashFlowStatement($startDate, $endDate);
-            $this->archiveReport('Cash Flow Statement', $startDate, $endDate, $reportData);
-
-            return response()->json($reportData);
-        } catch (Throwable $e) {
-            Log::error('Cash Flow Statement generation failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-            return response()->json(['message' => 'An unexpected error occurred while generating the Cash Flow Statement.'], 500);
-        }
-    }
-
-    /**
-     * Generate a General Ledger report.
-     */
-    public function getGeneralLedger(Request $request)
-    {
-        Gate::authorize('view-financial-reports');
-
-        try {
-            $this->setupService();
-            $validated = $request->validate([
-                'account_id' => ['required', 'integer', Rule::exists('chart_of_accounts', 'id')->where('company_id', auth()->user()->company_id)],
                 'start_date' => 'required|date_format:Y-m-d',
                 'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
             ]);
@@ -183,115 +128,490 @@ class AccountingController extends Controller
             $startDate = Carbon::parse($validated['start_date'])->startOfDay();
             $endDate = Carbon::parse($validated['end_date'])->endOfDay();
 
-            $reportData = $this->reportService->generateGeneralLedger($validated['account_id'], $startDate, $endDate);
-            // GL is typically not archived as it is a detailed view
+            $reportData = $this->reportService->generateProfitAndLoss($startDate, $endDate);
+
+            $this->archiveReport('Profit & Loss', $startDate, $endDate, $reportData);
 
             return response()->json($reportData);
-        } catch (\InvalidArgumentException $e) {
-            Log::warning("General Ledger generation validation error: " . $e->getMessage());
-            return response()->json(['message' => $e->getMessage()], 422);
         } catch (Throwable $e) {
-            Log::error('General Ledger generation failed: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred.'], 500);
+            Log::error('Profit & Loss generation failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while generating the Profit & Loss statement.',
+            ], 500);
         }
     }
 
-    /**
-     * Get key financial ratios for the dashboard.
-     */
-    public function getKeyRatios(Request $request)
+    public function getBalanceSheet(Request $request)
     {
         Gate::authorize('view-financial-reports');
 
         try {
             $this->setupService();
-            $reportData = $this->reportService->getKeyRatios();
-            // Ratios are typically dashboard data, not archived
+
+            $validated = $request->validate([
+                'end_date' => 'required|date_format:Y-m-d',
+            ]);
+
+            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+
+            $reportData = $this->reportService->generateBalanceSheet($endDate);
+
+            $this->archiveReport('Balance Sheet', null, $endDate, $reportData);
 
             return response()->json($reportData);
         } catch (Throwable $e) {
-            Log::error('Key Ratio calculation failed: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred while calculating key ratios.'], 500);
+            Log::error('Balance sheet generation failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while generating the balance sheet.',
+            ], 500);
         }
     }
 
-    /**
-     * Generate a Budget vs. Actuals report for a specific period.
-     */
+    public function generateCashFlowStatement(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            $validated = $request->validate([
+                'start_date' => 'required|date_format:Y-m-d',
+                'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
+            ]);
+
+            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+
+            $reportData = $this->reportService->generateCashFlowStatement($startDate, $endDate);
+
+            $this->archiveReport('Cash Flow Statement', $startDate, $endDate, $reportData);
+
+            return response()->json($reportData);
+        } catch (Throwable $e) {
+            Log::error('Cash Flow Statement generation failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while generating the Cash Flow Statement.',
+            ], 500);
+        }
+    }
+
+    public function getGeneralLedger(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            $validated = $request->validate([
+                'account_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists('chart_of_accounts', 'id')
+                        ->where('company_id', auth()->user()->company_id),
+                ],
+                'start_date' => 'required|date_format:Y-m-d',
+                'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
+            ]);
+
+            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+
+            $reportData = $this->reportService->generateGeneralLedger(
+                $validated['account_id'],
+                $startDate,
+                $endDate
+            );
+
+            return response()->json($reportData);
+        } catch (\InvalidArgumentException $e) {
+            Log::warning('General Ledger validation error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (Throwable $e) {
+            Log::error('General Ledger generation failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while generating the general ledger.',
+            ], 500);
+        }
+    }
+
     public function getBudgetVsActuals(Request $request)
     {
         Gate::authorize('view-financial-reports');
 
         try {
             $this->setupService();
+
             $validated = $request->validate([
                 'start_date' => 'required|date_format:Y-m-d',
-                'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date'
+                'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
             ]);
 
             $startDate = Carbon::parse($validated['start_date'])->startOfDay();
             $endDate = Carbon::parse($validated['end_date'])->endOfDay();
 
             $reportData = $this->reportService->generateBudgetVsActuals($startDate, $endDate);
+
             $this->archiveReport('Budget vs Actuals', $startDate, $endDate, $reportData);
 
             return response()->json($reportData);
         } catch (Throwable $e) {
-            Log::error('Budget vs Actuals report failed: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'Failed to generate Budget Report.'], 500);
+            Log::error('Budget vs Actuals report failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to generate Budget Report.',
+            ], 500);
         }
     }
 
-    // =================================================================
-    // OPERATIONAL METHODS (Not Core Reporting)
-    // =================================================================
+    /*
+    |--------------------------------------------------------------------------
+    | Finance Dashboard Endpoints
+    |--------------------------------------------------------------------------
+    */
 
-    /**
-     * Display the company's chart of accounts with current balances.
-     */
+    public function getDashboardSummary(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            [$startDate, $endDate] = $this->dashboardPeriod($request);
+
+            return response()->json(
+                $this->reportService->getDashboardSummary($startDate, $endDate)
+            );
+        } catch (Throwable $e) {
+            Log::error('Accounting dashboard summary failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load accounting dashboard summary.',
+            ], 500);
+        }
+    }
+
+    public function getFinancialTrends(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            $validated = $request->validate([
+                'months' => 'nullable|integer|min:1|max:36',
+            ]);
+
+            $months = (int) ($validated['months'] ?? 6);
+
+            $trends = $this->reportService->getFinancialTrends($months);
+
+            return response()->json(
+                method_exists($trends, 'values') ? $trends->values() : $trends
+            );
+        } catch (Throwable $e) {
+            Log::error('Financial trends failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load financial trends.',
+            ], 500);
+        }
+    }
+
+    public function getKeyRatios(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            return response()->json(
+                $this->reportService->getKeyRatios()
+            );
+        } catch (Throwable $e) {
+            Log::error('Key Ratio calculation failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while calculating key ratios.',
+            ], 500);
+        }
+    }
+
+    public function getAlerts(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            return response()->json(
+                $this->reportService->getAlerts()
+            );
+        } catch (Throwable $e) {
+            Log::error('Accounting alerts failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load accounting alerts.',
+            ], 500);
+        }
+    }
+
+    public function getDashboardAlerts(Request $request)
+    {
+        return $this->getAlerts($request);
+    }
+
+    public function getAccountsReceivableAging(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            return response()->json(
+                $this->reportService->generateAccountsReceivableAging()
+            );
+        } catch (Throwable $e) {
+            Log::error('A/R aging report failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load A/R aging report.',
+            ], 500);
+        }
+    }
+
+    public function getAccountsPayableAging(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            return response()->json(
+                $this->reportService->generateAccountsPayableAging()
+            );
+        } catch (Throwable $e) {
+            Log::error('A/P aging report failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load A/P aging report.',
+            ], 500);
+        }
+    }
+
+    public function getCashflowSummary(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            [$startDate, $endDate] = $this->dashboardPeriod($request);
+
+            return response()->json(
+                $this->reportService->getCashflowSummary($startDate, $endDate)
+            );
+        } catch (Throwable $e) {
+            Log::error('Cashflow summary failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load cashflow summary.',
+            ], 500);
+        }
+    }
+
+    public function getBudgetSummary(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            [$startDate, $endDate] = $this->dashboardPeriod($request);
+
+            return response()->json(
+                $this->reportService->getBudgetSummary($startDate, $endDate)
+            );
+        } catch (Throwable $e) {
+            Log::error('Budget summary failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load budget summary.',
+            ], 500);
+        }
+    }
+
+    public function getTaxSummary(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            $validated = $request->validate([
+                'end_date' => 'nullable|date_format:Y-m-d',
+            ]);
+
+            $endDate = isset($validated['end_date'])
+                ? Carbon::parse($validated['end_date'])->endOfDay()
+                : now()->endOfMonth();
+
+            return response()->json(
+                $this->reportService->getTaxSummary($endDate)
+            );
+        } catch (Throwable $e) {
+            Log::error('Tax summary failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load tax summary.',
+            ], 500);
+        }
+    }
+
+    public function getPeriodStatus(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            $validated = $request->validate([
+                'date' => 'nullable|date_format:Y-m-d',
+            ]);
+
+            $date = isset($validated['date'])
+                ? Carbon::parse($validated['date'])
+                : now();
+
+            return response()->json(
+                $this->reportService->getPeriodStatus($date)
+            );
+        } catch (Throwable $e) {
+            Log::error('Period status failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to load accounting period status.',
+            ], 500);
+        }
+    }
+
+    public function getFinanceDashboardBundle(Request $request)
+    {
+        Gate::authorize('view-financial-reports');
+
+        try {
+            $this->setupService();
+
+            [$startDate, $endDate] = $this->dashboardPeriod($request);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $this->reportService->getFinanceDashboardBundle($startDate, $endDate),
+            ]);
+        } catch (Throwable $e) {
+            Log::error('Finance dashboard bundle failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to load finance dashboard bundle.',
+            ], 500);
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Operational Methods
+    |--------------------------------------------------------------------------
+    */
+
     public function chartOfAccounts()
     {
         Gate::authorize('view-financial-reports');
 
         try {
             $this->setupService();
+
             $companyId = auth()->user()->company_id;
 
-            // Efficiently query accounts with their summed balances
             $accounts = ChartOfAccount::where('company_id', $companyId)
                 ->withSum(['journalLines' => fn ($q) => null], 'debit')
                 ->withSum(['journalLines' => fn ($q) => null], 'credit')
                 ->orderBy('account_code')
                 ->get()
                 ->map(function ($account) {
-                    // Calculate Raw Balance (Debit - Credit)
-                    $raw_balance = ($account->journal_lines_sum_debit ?? 0) - ($account->journal_lines_sum_credit ?? 0);
+                    $rawBalance = ($account->journal_lines_sum_debit ?? 0)
+                        - ($account->journal_lines_sum_credit ?? 0);
 
-                    // Adjust sign for display using the Service's logic (via a public wrapper if needed, or replicating here)
-                    // Since 'adjustBalanceSign' is protected in the service, we replicate the simple logic here for the list view.
-                    $balance = $raw_balance;
-                    if (in_array($account->account_type, ['Liability', 'Equity', 'Revenue', 'Income', 'Other Income', 'Sales'])) {
-                        $balance = -$raw_balance;
+                    $balance = $rawBalance;
+
+                    if (in_array($account->account_type, [
+                        'Liability',
+                        'Equity',
+                        'Revenue',
+                        'Income',
+                        'Other Income',
+                        'Sales',
+                    ], true)) {
+                        $balance = -$rawBalance;
                     }
 
-                    $account->balance = $balance;
+                    $account->balance = round($balance, 2);
 
-                    // Cleanup temporary attributes
                     unset($account->journal_lines_sum_debit, $account->journal_lines_sum_credit);
+
                     return $account;
                 });
 
             return response()->json($accounts);
         } catch (Throwable $e) {
-            Log::error('Failed to retrieve chart of accounts: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred while fetching chart of accounts.'], 500);
+            Log::error('Failed to retrieve chart of accounts: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while fetching chart of accounts.',
+            ], 500);
         }
     }
 
-    /**
-     * Store a Payment Voucher.
-     * This is an operational action, not a report, so it uses the JournalEntryService directly.
-     */
     public function storePaymentVoucher(Request $request, JournalEntryService $journalEntryService)
     {
         Gate::authorize('manage-financial-data');
@@ -300,9 +620,19 @@ class AccountingController extends Controller
             'transaction_date' => 'required|date_format:Y-m-d',
             'payee' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
-            'payment_account_id' => ['required', 'integer', Rule::exists('chart_of_accounts', 'id')->where('company_id', auth()->user()->company_id)],
+            'payment_account_id' => [
+                'required',
+                'integer',
+                Rule::exists('chart_of_accounts', 'id')
+                    ->where('company_id', auth()->user()->company_id),
+            ],
             'lines' => 'required|array|min:1',
-            'lines.*.account_id' => ['required', 'integer', Rule::exists('chart_of_accounts', 'id')->where('company_id', auth()->user()->company_id)],
+            'lines.*.account_id' => [
+                'required',
+                'integer',
+                Rule::exists('chart_of_accounts', 'id')
+                    ->where('company_id', auth()->user()->company_id),
+            ],
             'lines.*.amount' => 'required|numeric|min:0.01',
             'lines.*.description' => 'nullable|string|max:255',
         ]);
@@ -310,48 +640,44 @@ class AccountingController extends Controller
         $companyId = auth()->user()->company_id;
         $totalAmount = round(collect($validated['lines'])->sum('amount'), 2);
 
-        // Validate that the payment account is indeed a cash asset
-        $paymentAccount = ChartOfAccount::where('company_id', $companyId)
+        $paymentAccountExists = ChartOfAccount::where('company_id', $companyId)
             ->where('id', $validated['payment_account_id'])
-            ->where('account_subtype', 'asset_cash')
-            ->first();
+            ->where(function ($query) {
+                $query->where('account_subtype', 'asset_cash')
+                    ->orWhere('account_type', 'Asset');
+            })
+            ->exists();
 
-        if (!$paymentAccount) {
-            // Fallback check if subtype isn't fully populated yet: simply check it's an Asset
-            $fallbackCheck = ChartOfAccount::where('company_id', $companyId)
-                ->where('id', $validated['payment_account_id'])
-                ->where('account_type', 'Asset')
-                ->exists();
-
-            if (!$fallbackCheck) {
-                return response()->json(['message' => 'Invalid payment account. Must be a valid Asset account.'], 422);
-            }
+        if (!$paymentAccountExists) {
+            return response()->json([
+                'message' => 'Invalid payment account. Must be a valid Asset account.',
+            ], 422);
         }
 
         DB::beginTransaction();
+
         try {
-            $jeDescription = "Payment Voucher: " . ($validated['description'] ?? "Paid to {$validated['payee']}");
+            $jeDescription = 'Payment Voucher: '
+                . ($validated['description'] ?? "Paid to {$validated['payee']}");
+
             $jeLines = [];
 
-            // 1. CREDIT the Bank/Cash Account (Money leaving)
             $jeLines[] = [
                 'account_id' => $validated['payment_account_id'],
                 'debit' => 0,
                 'credit' => $totalAmount,
-                'line_description' => "Payment to " . $validated['payee']
+                'line_description' => 'Payment to ' . $validated['payee'],
             ];
 
-            // 2. DEBIT the Expense/Liability Accounts (What was paid for)
             foreach ($validated['lines'] as $line) {
                 $jeLines[] = [
                     'account_id' => $line['account_id'],
                     'debit' => round($line['amount'], 2),
                     'credit' => 0,
-                    'line_description' => $line['description'] ?? null
+                    'line_description' => $line['description'] ?? null,
                 ];
             }
 
-            // Create the entry using the JournalEntryService
             $journalEntry = $journalEntryService->createJournalEntry(
                 $validated['transaction_date'],
                 $jeDescription,
@@ -364,27 +690,35 @@ class AccountingController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Payment voucher created successfully.',
-                'data' => $journalEntry->load('lines.account:id,account_name,account_code')
+                'data' => $journalEntry->load('lines.account:id,account_name,account_code'),
             ], 201);
-
-        } catch (\InvalidArgumentException | \Exception $e) {
+        } catch (\InvalidArgumentException $e) {
             DB::rollBack();
-            Log::warning('Payment voucher creation failed validation: ' . $e->getMessage());
-            return response()->json(['message' => $e->getMessage()], 422);
+
+            Log::warning('Payment voucher validation failed: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
         } catch (Throwable $e) {
             DB::rollBack();
-            Log::error('Failed to create payment voucher: ' . $e->getMessage() . ' Trace: ' . $e->getTraceAsString());
-            return response()->json(['message' => 'An unexpected error occurred.'], 500);
+
+            Log::error('Failed to create payment voucher: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred.',
+            ], 500);
         }
     }
 
-    // ------------------------------------------------------------------------
-    // ARCHIVED REPORT METHODS
-    // ------------------------------------------------------------------------
+    /*
+    |--------------------------------------------------------------------------
+    | Archived Reports
+    |--------------------------------------------------------------------------
+    */
 
-    /**
-     * List all archived reports.
-     */
     public function listArchivedReports(Request $request)
     {
         Gate::authorize('view-financial-reports');
@@ -392,12 +726,11 @@ class AccountingController extends Controller
         $query = ArchivedReport::where('company_id', auth()->user()->company_id)
             ->latest('created_at');
 
-        return response()->json($query->paginate($request->get('per_page', 20)));
+        return response()->json(
+            $query->paginate((int) $request->get('per_page', 20))
+        );
     }
 
-    /**
-     * Show a single archived report (read-only).
-     */
     public function showArchivedReport(ArchivedReport $archivedReport)
     {
         Gate::authorize('view-financial-reports');
@@ -408,19 +741,4 @@ class AccountingController extends Controller
 
         return response()->json($archivedReport);
     }
-
-        public function getDashboardSummary(Request $request) {
-        $start = $request->start_date ? Carbon::parse($request->start_date) : now()->startOfMonth();
-        $end = $request->end_date ? Carbon::parse($request->end_date) : now();
-        return response()->json($this->reportService->getDashboardSummary($start, $end));
-            }
-
-        public function getFinancialTrends(Request $request) {
-            return response()->json($this->reportService->getFinancialTrends($request->get('months', 6)));
-        }
-
-        public function getAlerts() {
-            return response()->json($this->reportService->getAlerts());
-        }
-
 }
