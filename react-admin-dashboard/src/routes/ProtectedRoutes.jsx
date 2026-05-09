@@ -1,13 +1,32 @@
 // src/routes/ProtectedRoute.jsx
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../auth/AuthProvider";
+import { Navigate, useLocation } from "react-router-dom";
+import { Box, CircularProgress } from "@mui/material";
+import { useAuth } from "../api/AuthProvider";
 
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, isAuthenticated } = useAuth();
+  const location = useLocation();
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <CircularProgress size={28} />
+      </Box>
+    );
+  }
 
-  return user ? children : <Navigate to="/login" />;
+  if (!user && !isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return children;
 };
 
 export default ProtectedRoute;

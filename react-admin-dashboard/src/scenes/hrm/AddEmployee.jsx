@@ -1,65 +1,94 @@
 // src/scenes/team/AddEmployee.jsx
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
-  TextField,
-  Typography,
-  useTheme,
-  Grid,
-  MenuItem,
   CircularProgress,
-  Alert,
-  Snackbar,
-  Select,
-  InputLabel,
   FormControl,
-  Paper,
   IconButton,
   InputAdornment,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Snackbar,
+  Stack,
+  TextField,
   Tooltip,
+  Typography,
+  useTheme,
 } from "@mui/material";
-import { Visibility, VisibilityOff, ContentCopy, Refresh } from "@mui/icons-material";
+import {
+  AccountBalanceWalletOutlined,
+  BadgeOutlined,
+  BusinessCenterOutlined,
+  ContentCopy,
+  KeyOutlined,
+  PersonOutline,
+  ReceiptLongOutlined,
+  Refresh,
+  Visibility,
+  VisibilityOff,
+} from "@mui/icons-material";
 import { Formik } from "formik";
 import * as yup from "yup";
 import { useNavigate } from "react-router-dom";
+
 import Header from "../../components/Header";
-import { tokens } from "../../theme";
 import { useAuth } from "../../api/AuthProvider";
 
-const Section = ({ title, children }) => {
+const getError = (touched, errors, field) =>
+  Boolean(touched[field] && errors[field]);
+
+const getHelperText = (touched, errors, field) =>
+  touched[field] && errors[field] ? errors[field] : "";
+
+const generateRandomPassword = () => {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$!";
+  let password = "";
+
+  for (let i = 0; i < 10; i += 1) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+
+  return password;
+};
+
+const extractCollection = (response) => {
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response?.data?.data)) return response.data.data;
+  return [];
+};
+
+const Section = ({ title, subtitle, icon, color, children }) => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
+  const styles = theme.addEmployee;
+
   return (
-    <Paper
-      elevation={2}
-      sx={{
-        p: 3,
-        mb: 4,
-        borderRadius: "16px",
-        backgroundColor: colors.primary[400],
-      }}
-    >
-      <Typography
-        variant="h6"
-        color={colors.grey[100]}
-        sx={{
-          mb: 3,
-          borderBottom: `2px solid ${colors.greenAccent[500]}`,
-          pb: 0.5,
-          fontWeight: 600,
-        }}
-      >
-        {title}
-      </Typography>
-      {children}
+    <Paper elevation={0} sx={styles.sectionCard}>
+      <Box sx={styles.sectionHeader}>
+        <Box sx={styles.sectionTitleWrap}>
+          <Box sx={styles.sectionIcon(color)}>{icon}</Box>
+
+          <Box minWidth={0}>
+            <Typography sx={styles.sectionTitle}>{title}</Typography>
+            {subtitle && (
+              <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>
+            )}
+          </Box>
+        </Box>
+      </Box>
+
+      <Box sx={styles.formGrid}>{children}</Box>
     </Paper>
   );
 };
 
 const AddEmployee = () => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
+  const styles = theme.addEmployee;
   const navigate = useNavigate();
   const { apiClient, isAuthenticated } = useAuth();
 
@@ -71,46 +100,33 @@ const AddEmployee = () => {
   const [success, setSuccess] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // ✅ Fetch departments and job titles safely
-  const fetchDropdowns = async () => {
+  const fetchDropdowns = useCallback(async () => {
     try {
       setDataLoading(true);
       setError("");
-      const [deptRes, titleRes] = await Promise.all([
+
+      const [departmentResponse, jobTitleResponse] = await Promise.all([
         apiClient.get("/departments"),
         apiClient.get("/job-titles"),
       ]);
 
-      const extractData = (res) => {
-        if (Array.isArray(res.data)) return res.data;
-        if (res.data?.data && Array.isArray(res.data.data)) return res.data.data;
-        return [];
-      };
-
-      setDepartments(extractData(deptRes));
-      setJobTitles(extractData(titleRes));
+      setDepartments(extractCollection(departmentResponse));
+      setJobTitles(extractCollection(jobTitleResponse));
     } catch (err) {
       console.error("Dropdown fetch error:", err);
       setError("Could not load departments and job titles.");
     } finally {
       setDataLoading(false);
     }
-  };
+  }, [apiClient]);
 
   useEffect(() => {
-    if (isAuthenticated) fetchDropdowns();
-    else setDataLoading(false);
-  }, [isAuthenticated]);
-
-  const generateRandomPassword = () => {
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$!";
-    let password = "";
-    for (let i = 0; i < 10; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    if (isAuthenticated) {
+      fetchDropdowns();
+    } else {
+      setDataLoading(false);
     }
-    return password;
-  };
+  }, [fetchDropdowns, isAuthenticated]);
 
   const initialValues = useMemo(
     () => ({
@@ -136,27 +152,43 @@ const AddEmployee = () => {
     []
   );
 
-  const validationSchema = yup.object({
-    first_name: yup.string().trim().required("Required"),
-    last_name: yup.string().trim().required("Required"),
-    email: yup.string().trim().email("Invalid email").required("Required"),
-    phone_number: yup
-      .string()
-      .nullable()
-      .matches(/^(?:\+254|0)\d{9}$/, "Invalid Kenyan phone number"),
-    department_id: yup.string().required("Select a department"),
-    job_title_id: yup.string().required("Select a job title"),
-    salary: yup
-      .number()
-      .nullable()
-      .typeError("Must be a number")
-      .min(0, "Salary cannot be negative"),
-    password: yup.string().required("Password required").min(8, "Min 8 chars"),
-  });
+  const validationSchema = useMemo(
+    () =>
+      yup.object({
+        first_name: yup.string().trim().required("Required"),
+        last_name: yup.string().trim().required("Required"),
+        email: yup.string().trim().email("Invalid email").required("Required"),
+        phone_number: yup
+          .string()
+          .nullable()
+          .matches(/^(?:\+254|0)\d{9}$/, {
+            message: "Invalid Kenyan phone number",
+            excludeEmptyString: true,
+          }),
+        department_id: yup.string().required("Select a department"),
+        job_title_id: yup.string().required("Select a job title"),
+        salary: yup
+          .number()
+          .nullable()
+          .typeError("Must be a number")
+          .min(0, "Salary cannot be negative"),
+        password: yup.string().required("Password required").min(8, "Min 8 chars"),
+      }),
+    []
+  );
 
-  const handleCopyPassword = (password) => {
-    navigator.clipboard.writeText(password);
-    setSuccess("Password copied to clipboard!");
+  const handleCopyPassword = async (password) => {
+    if (!password) {
+      setError("Generate or enter a password first.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(password);
+      setSuccess("Password copied to clipboard.");
+    } catch {
+      setError("Could not copy password.");
+    }
   };
 
   const handleFormSubmit = async (values, { setSubmitting, resetForm }) => {
@@ -166,10 +198,12 @@ const AddEmployee = () => {
 
     try {
       const response = await apiClient.post("/employees", values);
+
       if (response.data?.status === "success") {
-        setSuccess("Employee created successfully!");
+        setSuccess("Employee created successfully.");
         resetForm();
-        setTimeout(() => navigate("/team"), 1500);
+
+        setTimeout(() => navigate("/team"), 1200);
       } else {
         throw new Error(response.data?.message || "Failed to create employee.");
       }
@@ -182,246 +216,365 @@ const AddEmployee = () => {
     }
   };
 
-  if (dataLoading)
+  if (dataLoading) {
     return (
-      <Box m="20px" display="flex" justifyContent="center" alignItems="center" height="80vh">
-        <CircularProgress color="secondary" />
-        <Typography ml={2}>Loading departments & job titles...</Typography>
+      <Box sx={styles.shell}>
+        <Paper elevation={0} sx={styles.loadingCard}>
+          <Stack alignItems="center" spacing={1.5}>
+            <CircularProgress size={26} />
+            <Typography sx={{ color: "text.secondary", fontSize: "0.78rem" }}>
+              Loading departments and job titles...
+            </Typography>
+          </Stack>
+        </Paper>
       </Box>
     );
+  }
 
   return (
-    <Box m="20px">
-      <Header title="ADD EMPLOYEE" subtitle="Create a New Employee Profile" />
+    <Box sx={styles.shell}>
+      <Paper elevation={0} sx={styles.headerCard}>
+        <Header
+          title="ADD EMPLOYEE"
+          subtitle="Create a new employee profile and login credentials"
+        />
+      </Paper>
 
-      {error && !success && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && !success && (
+        <Alert severity="error" sx={styles.alert}>
+          {error}
+        </Alert>
+      )}
 
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
         onSubmit={handleFormSubmit}
       >
-        {({ values, errors, touched, handleBlur, handleChange, handleSubmit, setFieldValue }) => (
+        {({
+          values,
+          errors,
+          touched,
+          handleBlur,
+          handleChange,
+          handleSubmit,
+          setFieldValue,
+          isSubmitting,
+        }) => (
           <form onSubmit={handleSubmit}>
-            <Grid container spacing={3}>
-              {/* Personal Info */}
-              <Grid item xs={12}>
-                <Section title="Personal Information">
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled" label="First Name *"
-                        name="first_name" onChange={handleChange}
-                        value={values.first_name} onBlur={handleBlur}
-                        error={!!touched.first_name && !!errors.first_name}
-                        helperText={touched.first_name && errors.first_name}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled" label="Last Name *"
-                        name="last_name" onChange={handleChange}
-                        value={values.last_name} onBlur={handleBlur}
-                        error={!!touched.last_name && !!errors.last_name}
-                        helperText={touched.last_name && errors.last_name}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled" label="Email *"
-                        name="email" onChange={handleChange}
-                        value={values.email} onBlur={handleBlur}
-                        error={!!touched.email && !!errors.email}
-                        helperText={touched.email && errors.email}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled" label="Phone Number"
-                        name="phone_number" onChange={handleChange}
-                        value={values.phone_number} onBlur={handleBlur}
-                        error={!!touched.phone_number && !!errors.phone_number}
-                        helperText={touched.phone_number && errors.phone_number}
-                      />
-                    </Grid>
-                  </Grid>
-                </Section>
-              </Grid>
+            <Section
+              title="Personal Information"
+              subtitle="Basic identity and contact details"
+              icon={<PersonOutline />}
+              color={theme.palette.success.main}
+            >
+              <TextField
+                fullWidth
+                label="First Name *"
+                name="first_name"
+                value={values.first_name}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "first_name")}
+                helperText={getHelperText(touched, errors, "first_name")}
+                sx={styles.textField}
+              />
 
-              {/* Employment Info */}
-              <Grid item xs={12}>
-                <Section title="Employment Details">
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
-                      <FormControl fullWidth variant="filled">
-                        <InputLabel>Department *</InputLabel>
-                        <Select
-                          name="department_id"
-                          value={values.department_id}
-                          onChange={handleChange}
-                          onBlur={handleBlur}
+              <TextField
+                fullWidth
+                label="Last Name *"
+                name="last_name"
+                value={values.last_name}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "last_name")}
+                helperText={getHelperText(touched, errors, "last_name")}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="Email *"
+                name="email"
+                value={values.email}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "email")}
+                helperText={getHelperText(touched, errors, "email")}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="Phone Number"
+                name="phone_number"
+                value={values.phone_number}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "phone_number")}
+                helperText={
+                  getHelperText(touched, errors, "phone_number") ||
+                  "Format: 0712345678 or +254712345678"
+                }
+                sx={styles.textField}
+              />
+            </Section>
+
+            <Section
+              title="Employment Details"
+              subtitle="Department, job assignment, salary, and hire date"
+              icon={<BusinessCenterOutlined />}
+              color={theme.palette.info.main}
+            >
+              <FormControl
+                fullWidth
+                error={getError(touched, errors, "department_id")}
+              >
+                <InputLabel>Department *</InputLabel>
+                <Select
+                  name="department_id"
+                  label="Department *"
+                  value={values.department_id}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                >
+                  <MenuItem value="">
+                    <em>Select Department</em>
+                  </MenuItem>
+
+                  {departments.map((department) => (
+                    <MenuItem key={department.id} value={department.id}>
+                      {department.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl
+                fullWidth
+                error={getError(touched, errors, "job_title_id")}
+              >
+                <InputLabel>Job Title *</InputLabel>
+                <Select
+                  name="job_title_id"
+                  label="Job Title *"
+                  value={values.job_title_id}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                >
+                  <MenuItem value="">
+                    <em>Select Job Title</em>
+                  </MenuItem>
+
+                  {jobTitles.map((jobTitle) => (
+                    <MenuItem key={jobTitle.id} value={jobTitle.id}>
+                      {jobTitle.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                fullWidth
+                label="Salary"
+                name="salary"
+                value={values.salary}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "salary")}
+                helperText={getHelperText(touched, errors, "salary")}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                type="date"
+                label="Hired On"
+                name="hired_on"
+                InputLabelProps={{ shrink: true }}
+                value={values.hired_on}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "hired_on")}
+                helperText={getHelperText(touched, errors, "hired_on")}
+                sx={styles.textField}
+              />
+            </Section>
+
+            <Section
+              title="Statutory Information"
+              subtitle="National and statutory registration details"
+              icon={<ReceiptLongOutlined />}
+              color={theme.palette.error.main}
+            >
+              <TextField
+                fullWidth
+                label="National ID Number"
+                name="national_id_number"
+                value={values.national_id_number}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="NSSF Number"
+                name="nssf_number"
+                value={values.nssf_number}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="NHIF Number"
+                name="nhif_number"
+                value={values.nhif_number}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="KRA PIN"
+                name="kra_pin"
+                value={values.kra_pin}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+            </Section>
+
+            <Section
+              title="Banking Information"
+              subtitle="Bank account details for payroll processing"
+              icon={<AccountBalanceWalletOutlined />}
+              color={theme.palette.primary.main}
+            >
+              <TextField
+                fullWidth
+                label="Bank Account Number"
+                name="bank_account_number"
+                value={values.bank_account_number}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="Bank Name"
+                name="bank_name"
+                value={values.bank_name}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+
+              <TextField
+                fullWidth
+                label="Bank Branch"
+                name="bank_branch"
+                value={values.bank_branch}
+                onChange={handleChange}
+                sx={styles.textField}
+              />
+            </Section>
+
+            <Section
+              title="Login Credentials"
+              subtitle="Generate first-time access credentials for the employee"
+              icon={<KeyOutlined />}
+              color={theme.palette.warning.main}
+            >
+              <TextField
+                fullWidth
+                label="Password *"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                value={values.password}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                error={getError(touched, errors, "password")}
+                helperText={getHelperText(touched, errors, "password")}
+                sx={styles.textField}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip title={showPassword ? "Hide password" : "Show password"}>
+                        <IconButton
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          sx={styles.iconButton}
                         >
-                          <MenuItem value="">
-                            <em>Select Department</em>
-                          </MenuItem>
-                          {departments.map((dept) => (
-                            <MenuItem key={dept.id} value={dept.id}>
-                              {dept.name}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </Tooltip>
 
-                    <Grid item xs={12} sm={6}>
-                      <FormControl fullWidth variant="filled">
-                        <InputLabel>Job Title *</InputLabel>
-                        <Select
-                          name="job_title_id"
-                          value={values.job_title_id}
-                          onChange={handleChange}
-                          onBlur={handleBlur}
+                      <Tooltip title="Copy password">
+                        <IconButton
+                          onClick={() => handleCopyPassword(values.password)}
+                          sx={styles.iconButton}
                         >
-                          <MenuItem value="">
-                            <em>Select Job Title</em>
-                          </MenuItem>
-                          {jobTitles.map((title) => (
-                            <MenuItem key={title.id} value={title.id}>
-                              {title.name}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
+                          <ContentCopy />
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                }}
+              />
 
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled" label="Salary"
-                        name="salary" onChange={handleChange}
-                        value={values.salary} onBlur={handleBlur}
-                        error={!!touched.salary && !!errors.salary}
-                        helperText={touched.salary && errors.salary}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled" type="date"
-                        label="Hired On" name="hired_on"
-                        InputLabelProps={{ shrink: true }}
-                        onChange={handleChange}
-                        value={values.hired_on}
-                        onBlur={handleBlur}
-                        error={!!touched.hired_on && !!errors.hired_on}
-                        helperText={touched.hired_on && errors.hired_on}
-                      />
-                    </Grid>
-                  </Grid>
-                </Section>
-              </Grid>
-
-              {/* Statutory Info */}
-              <Grid item xs={12}>
-                <Section title="Statutory Information">
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="National ID Number" name="national_id_number"
-                        onChange={handleChange} value={values.national_id_number} />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="NSSF Number" name="nssf_number"
-                        onChange={handleChange} value={values.nssf_number} />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="NHIF Number" name="nhif_number"
-                        onChange={handleChange} value={values.nhif_number} />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="KRA PIN" name="kra_pin"
-                        onChange={handleChange} value={values.kra_pin} />
-                    </Grid>
-                  </Grid>
-                </Section>
-              </Grid>
-
-              {/* Banking Info */}
-              <Grid item xs={12}>
-                <Section title="Banking Information">
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="Bank Account Number" name="bank_account_number"
-                        onChange={handleChange} value={values.bank_account_number} />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="Bank Name" name="bank_name"
-                        onChange={handleChange} value={values.bank_name} />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField fullWidth variant="filled" label="Bank Branch" name="bank_branch"
-                        onChange={handleChange} value={values.bank_branch} />
-                    </Grid>
-                  </Grid>
-                </Section>
-              </Grid>
-
-              {/* Login Info */}
-              <Grid item xs={12}>
-                <Section title="Login Credentials">
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        fullWidth variant="filled"
-                        label="Password *"
-                        name="password"
-                        type={showPassword ? "text" : "password"}
-                        value={values.password}
-                        onChange={handleChange}
-                        InputProps={{
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <Tooltip title="Show/Hide password">
-                                <IconButton onClick={() => setShowPassword(!showPassword)}>
-                                  {showPassword ? <VisibilityOff /> : <Visibility />}
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Copy password">
-                                <IconButton onClick={() => handleCopyPassword(values.password)}>
-                                  <ContentCopy />
-                                </IconButton>
-                              </Tooltip>
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <Button
-                        variant="outlined"
-                        color="secondary"
-                        onClick={() => setFieldValue("password", generateRandomPassword())}
-                      >
-                        Generate Random Password
-                      </Button>
-                    </Grid>
-                  </Grid>
-                </Section>
-              </Grid>
-
-              {/* Submit */}
-              <Box display="flex" justifyContent="flex-end" width="100%">
-                <Button type="submit" variant="contained" color="secondary" disabled={loading}>
-                  {loading ? <CircularProgress size={24} color="inherit" /> : "Create Employee"}
+              <Stack direction="row" alignItems="center" spacing={1}>
+                <Button
+                  variant="outlined"
+                  startIcon={<BadgeOutlined />}
+                  onClick={() =>
+                    setFieldValue("password", generateRandomPassword())
+                  }
+                  sx={styles.secondaryButton}
+                >
+                  Generate Password
                 </Button>
-                <IconButton onClick={fetchDropdowns} sx={{ ml: 2 }}>
-                  <Refresh color="action" />
-                </IconButton>
+              </Stack>
+            </Section>
+
+            <Paper elevation={0} sx={styles.actionFooter}>
+              <Typography sx={styles.footerHint}>
+                Review the details carefully before creating the employee account.
+              </Typography>
+
+              <Box sx={styles.actionStack}>
+                <Button
+                  variant="outlined"
+                  startIcon={<Refresh />}
+                  onClick={fetchDropdowns}
+                  sx={styles.secondaryButton}
+                >
+                  Reload Lists
+                </Button>
+
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={loading || isSubmitting}
+                  sx={styles.primaryButton}
+                >
+                  {loading || isSubmitting ? (
+                    <CircularProgress size={20} color="inherit" />
+                  ) : (
+                    "Create Employee"
+                  )}
+                </Button>
               </Box>
-            </Grid>
+            </Paper>
           </form>
         )}
       </Formik>
 
-      <Snackbar open={!!success} autoHideDuration={4000} onClose={() => setSuccess("")}>
-        <Alert severity="success" onClose={() => setSuccess("")}>{success}</Alert>
+      <Snackbar
+        open={Boolean(success)}
+        autoHideDuration={4000}
+        onClose={() => setSuccess("")}
+      >
+        <Alert severity="success" onClose={() => setSuccess("")}>
+          {success}
+        </Alert>
       </Snackbar>
     </Box>
   );

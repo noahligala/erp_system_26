@@ -1,124 +1,166 @@
+// src/api/apiClient.js
 import axios from "axios";
-import { secureStore } from "../utils/storage";
 import { toast } from "react-toastify";
+import { secureStore } from "../utils/storage";
 
-// Adjust this URL if your backend runs on a different port/host
-const API_BASE_URL = "http://localhost:8000/api";
+const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: { "Content-Type": "application/json" },
-  timeout: 15000,
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+  timeout: 20000,
 });
 
-// ------------------- REQUEST INTERCEPTOR -------------------
+let isRefreshing = false;
+let failedQueue = [];
+
+const PUBLIC_PATHS = ["/public/", "/careers/public", "/jobs/public"];
+
+const isPublicRoute = (url = "") => {
+  return PUBLIC_PATHS.some((path) => url.includes(path));
+};
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) {
+      reject(error);
+    } else {
+      resolve(token);
+    }
+  });
+
+  failedQueue = [];
+};
+
+const clearAuthAndLogout = () => {
+  secureStore.remove("accessToken");
+  secureStore.remove("refreshToken");
+  secureStore.remove("user_data");
+  secureStore.remove("secret_key");
+  secureStore.remove("roles");
+  secureStore.remove("permissions");
+
+  window.dispatchEvent(new Event("auth-logout"));
+};
+
 apiClient.interceptors.request.use(
   (config) => {
-    // 💡 OPTIMIZATION: Do not attach Authorization headers for public routes
-    // This prevents Laravel from throwing a 401 if a guest browses the careers 
-    // page with an old/expired token in their browser storage.
-    if (config.url && config.url.includes('/public/')) {
+    if (isPublicRoute(config.url)) {
       return config;
     }
 
     const token = secureStore.get("accessToken");
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// ------------------- RESPONSE INTERCEPTOR -------------------
-let isRefreshing = false;
-let failedQueue = [];
-
-const processQueue = (error, token = null) => {
-  failedQueue.forEach((prom) => (error ? prom.reject(error) : prom.resolve(token)));
-  failedQueue = [];
-};
-
 apiClient.interceptors.response.use(
-  (response) => response, // Pass through successful responses
+  (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // --- 1. Handle 403 Forbidden (Permission Denied) ---
-    if (error.response?.status === 403) {
-      // Show the toast with the error message from the backend
-      const errorMessage = error.response.data?.error || "Access denied. You do not have permission.";
-      toast.error(errorMessage);
-      
-      // Reject the promise so the component's .catch() or finally() can run
+    if (!originalRequest) {
       return Promise.reject(error);
     }
-    // ----------------------------------------
 
-    // --- 2. Handle 401 Unauthorized (Token Expired) ---
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
+    const status = error.response?.status;
 
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return apiClient(originalRequest);
-        });
-      }
+    if (status === 403) {
+      const message =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Access denied. You do not have permission.";
 
-      isRefreshing = true;
-      const refreshToken = secureStore.get("refreshToken");
+      toast.error(message);
 
-      if (!refreshToken) {
-        isRefreshing = false;
-        // Dispatch event for AuthProvider to handle logout silently/gracefully
-        window.dispatchEvent(new Event("auth-logout")); 
-        return Promise.reject(error);
-      }
-
-      try {
-        // We use axios directly here to avoid interceptor loop
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
-        
-        // This expects the full user payload from your backend
-        const payload = response.data.data;
-        if (!payload?.token?.access_token || !payload?.user) {
-          throw new Error("Invalid refresh response");
-        }
-
-        const { access_token, refresh_token } = payload.token;
-        
-        // We need to re-set all user data on refresh
-        const rememberMe = !!localStorage.getItem("refreshToken");
-        secureStore.set("accessToken", access_token, rememberMe);
-        secureStore.set("refreshToken", refresh_token, true);
-        
-        // Re-set user data (as implemented in AuthProvider)
-        secureStore.set("user_data", payload.user, rememberMe);
-        secureStore.set("secret_key", payload.user.secret_key, rememberMe);
-        secureStore.set("roles", payload.user.roles || [], rememberMe);
-        secureStore.set("permissions", payload.user.permissions || [], rememberMe);
-
-        apiClient.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
-        
-        // Pass the new token to the waiting queue
-        processQueue(null, access_token);
-
-        originalRequest.headers.Authorization = `Bearer ${access_token}`;
-        return apiClient(originalRequest);
-      } catch (err) {
-        processQueue(err, null);
-        // Dispatch event for AuthProvider to handle logout
-        window.dispatchEvent(new Event("auth-logout"));
-        return Promise.reject(err);
-      } finally {
-        isRefreshing = false;
-      }
+      return Promise.reject(error);
     }
-    
-    // For other errors (500, 404, etc.), just let them fall through
-    return Promise.reject(error);
+
+    if (status !== 401 || originalRequest._retry || isPublicRoute(originalRequest.url)) {
+      return Promise.reject(error);
+    }
+
+    originalRequest._retry = true;
+
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      }).then((token) => {
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return apiClient(originalRequest);
+      });
+    }
+
+    isRefreshing = true;
+
+    const refreshToken = secureStore.get("refreshToken");
+
+    if (!refreshToken) {
+      isRefreshing = false;
+      clearAuthAndLogout();
+      return Promise.reject(error);
+    }
+
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/auth/refresh`,
+        {
+          refresh_token: refreshToken,
+        },
+        {
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          timeout: 20000,
+        }
+      );
+
+      const payload = response.data?.data;
+
+      const accessToken = payload?.token?.access_token;
+      const newRefreshToken = payload?.token?.refresh_token;
+      const user = payload?.user;
+
+      if (!accessToken || !newRefreshToken || !user) {
+        throw new Error("Invalid refresh response");
+      }
+
+      const rememberMe = Boolean(localStorage.getItem("refreshToken"));
+
+      secureStore.set("accessToken", accessToken, rememberMe);
+      secureStore.set("refreshToken", newRefreshToken, true);
+      secureStore.set("user_data", user, rememberMe);
+      secureStore.set("secret_key", user.secret_key, rememberMe);
+      secureStore.set("roles", user.roles || [], rememberMe);
+      secureStore.set("permissions", user.permissions || [], rememberMe);
+
+      apiClient.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+
+      processQueue(null, accessToken);
+
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+
+      return apiClient(originalRequest);
+    } catch (refreshError) {
+      processQueue(refreshError, null);
+      clearAuthAndLogout();
+
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
+
+export default apiClient;

@@ -1,111 +1,163 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
-  Grid,
+  Chip,
+  CircularProgress,
   Paper,
+  Stack,
   Typography,
   useTheme,
-  CircularProgress,
-  Tooltip,
-  IconButton,
 } from "@mui/material";
-import { tokens } from "../../../theme.js";
-import Header from "../../../components/Header.jsx";
-import {apiClient} from "../../../api/apiClient.js";
+import { alpha } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 
-// Icons for the cards
-import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
-import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
-import BalanceOutlinedIcon from '@mui/icons-material/BalanceOutlined';
-import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
-import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import ShowChartIcon from '@mui/icons-material/ShowChart';
+import { apiClient } from "../../../api/apiClient.js";
 
-// Reusable StatBox component (you can move this to a shared components file)
-const StatBox = ({ title, value, icon, description, trend }) => {
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import BalanceOutlinedIcon from "@mui/icons-material/BalanceOutlined";
+import AccountBalanceOutlinedIcon from "@mui/icons-material/AccountBalanceOutlined";
+import RequestQuoteOutlinedIcon from "@mui/icons-material/RequestQuoteOutlined";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
+import ShowChartIcon from "@mui/icons-material/ShowChart";
+import SavingsOutlinedIcon from "@mui/icons-material/SavingsOutlined";
+import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
+import SyncAltOutlinedIcon from "@mui/icons-material/SyncAltOutlined";
+import CalculateOutlinedIcon from "@mui/icons-material/CalculateOutlined";
+import PriceChangeOutlinedIcon from "@mui/icons-material/PriceChangeOutlined";
+import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
+import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+
+const getAccentVars = (color) => ({
+  "--accent": color,
+  "--accent-bg": alpha(color, 0.1),
+  "--accent-border": alpha(color, 0.16),
+  "--accent-border-strong": alpha(color, 0.32),
+});
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const formatCurrency = (value, currency = "KES") => {
+  const number = safeNumber(value);
+
+  return new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(number);
+};
+
+const formatRatio = (value) => safeNumber(value).toFixed(2);
+
+const formatPercent = (value) => {
+  const number = safeNumber(value);
+
+  return `${number.toFixed(1)}%`;
+};
+
+const KpiCard = ({ title, value, icon, description, trend, color }) => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
-  
+  const styles = theme.financeReports;
+
   return (
-    <Paper elevation={3} sx={{ p: 2, backgroundColor: colors.primary[400], height: '100%' }}>
-      <Box display="flex" justifyContent="space-between">
-        <Box>
-          <Typography variant="h6" fontWeight="600" color={colors.grey[300]}>
-            {title}
-          </Typography>
-          <Typography variant="h3" fontWeight="bold" color={colors.grey[100]}>
-            {value}
-          </Typography>
+    <Paper
+      elevation={0}
+      sx={styles.kpiCard}
+      style={getAccentVars(color)}
+    >
+      <Stack direction="row" justifyContent="space-between" spacing={1.5}>
+        <Box minWidth={0}>
+          <Typography sx={styles.kpiTitle}>{title}</Typography>
+          <Typography sx={styles.kpiValue}>{value}</Typography>
         </Box>
-        <Box sx={{ color: colors.greenAccent[500] }}>
+
+        <Box sx={styles.kpiIconBox} style={getAccentVars(color)}>
           {icon}
         </Box>
-      </Box>
-      <Box display="flex" justifyContent="space-between" mt={1}>
-        <Typography variant="body2" color={colors.grey[300]}>
-          {description}
-        </Typography>
+      </Stack>
+
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        spacing={1}
+        mt={1.25}
+      >
+        <Typography sx={styles.kpiDescription}>{description}</Typography>
+
         {trend && (
-          <Typography variant="body2" sx={{ color: trend.startsWith('+') ? colors.greenAccent[500] : colors.redAccent[500] }}>
-            {trend}
-          </Typography>
+          <Chip
+            label={trend}
+            size="small"
+            sx={styles.trendChip}
+            style={getAccentVars(color)}
+          />
         )}
+      </Stack>
+    </Paper>
+  );
+};
+
+const ReportCard = ({ report }) => {
+  const theme = useTheme();
+  const styles = theme.financeReports;
+  const navigate = useNavigate();
+
+  return (
+    <Paper
+      elevation={0}
+      onClick={() => navigate(report.path)}
+      sx={styles.reportCard}
+      style={getAccentVars(report.color)}
+    >
+      <Box sx={styles.reportIconBox} style={getAccentVars(report.color)}>
+        {report.icon}
+      </Box>
+
+      <Typography sx={styles.reportTitle}>{report.title}</Typography>
+
+      <Typography sx={styles.reportDescription}>
+        {report.description}
+      </Typography>
+
+      <Box sx={styles.reportMeta}>
+        <Chip label={report.tag} size="small" sx={styles.reportTag} />
+
+        <ArrowForwardRoundedIcon sx={styles.arrowIcon} />
       </Box>
     </Paper>
   );
 };
 
-// Reusable Navigation Card component
-const ReportCard = ({ title, description, icon, path, colors }) => {
-    const navigate = useNavigate();
-    return (
-        <Grid item xs={12} sm={6} md={4}>
-            <Paper
-                elevation={3}
-                sx={{
-                    p: 3,
-                    backgroundColor: colors.primary[400],
-                    height: '160px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    transition: 'all 0.2s ease-in-out',
-                    '&:hover': {
-                        transform: 'translateY(-5px)',
-                        boxShadow: `0 10px 20px -5px ${colors.primary[900]}`,
-                        cursor: 'pointer',
-                        backgroundColor: colors.primary[900]
-                    }
-                }}
-                onClick={() => navigate(path)}
-            >
-                <Box display="flex" justifyContent="space-between" alignItems="start">
-                    <Box>
-                        <Typography variant="h5" fontWeight="600">{title}</Typography>
-                    </Box>
-                    <Box sx={{ color: colors.greenAccent[400] }}>
-                        {React.cloneElement(icon, { style: { fontSize: 32 } })}
-                    </Box>
-                </Box>
-                 <Typography variant="body2" color={colors.grey[300]}>{description}</Typography>
-            </Paper>
-        </Grid>
-    );
-};
+const SectionHeader = ({ title, subtitle }) => {
+  const theme = useTheme();
+  const styles = theme.financeReports;
 
+  return (
+    <Box sx={styles.sectionHeader}>
+      <Typography sx={styles.sectionTitle}>{title}</Typography>
+      {subtitle && <Typography sx={styles.sectionSubtitle}>{subtitle}</Typography>}
+    </Box>
+  );
+};
 
 const AccountingReports = () => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
+  const styles = theme.financeReports;
+
   const [loading, setLoading] = useState(true);
   const [ratios, setRatios] = useState(null);
 
-  const fetchRatios = async () => {
+  const fetchRatios = useCallback(async () => {
     setLoading(true);
+
     try {
       const res = await apiClient.get("/accounting/key-ratios");
       setRatios(res.data);
@@ -115,139 +167,259 @@ const AccountingReports = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchRatios();
-  }, []);
+  }, [fetchRatios]);
+
+  const kpis = useMemo(() => {
+    const currentRatio = safeNumber(ratios?.current_ratio);
+    const quickRatio = safeNumber(ratios?.quick_ratio);
+    const netMargin =
+      ratios?.net_profit_margin_ytd !== undefined
+        ? safeNumber(ratios.net_profit_margin_ytd)
+        : safeNumber(ratios?.net_profit_margin) * 100;
+
+    const ytdNetIncome = safeNumber(ratios?.ytd_net_income);
+    const ytdRevenue = safeNumber(ratios?.ytd_revenue);
+
+    return [
+      {
+        title: "Current Ratio",
+        value: formatRatio(currentRatio),
+        description: "Short-term liquidity",
+        trend: currentRatio >= 1.5 ? "Healthy" : "Review",
+        icon: <ShowChartIcon />,
+        color:
+          currentRatio >= 1.5
+            ? theme.palette.success.main
+            : theme.palette.warning.main,
+      },
+      {
+        title: "Quick Ratio",
+        value: formatRatio(quickRatio),
+        description: "Liquidity excluding stock",
+        trend: quickRatio >= 0.8 ? "Stable" : "Tight",
+        icon: <BalanceOutlinedIcon />,
+        color:
+          quickRatio >= 0.8
+            ? theme.palette.info.main
+            : theme.palette.warning.main,
+      },
+      {
+        title: "Net Profit Margin",
+        value: formatPercent(netMargin),
+        description: "YTD profitability",
+        trend: netMargin >= 0 ? "Positive" : "Loss",
+        icon:
+          netMargin >= 0 ? (
+            <TrendingUpIcon />
+          ) : (
+            <TrendingDownIcon />
+          ),
+        color:
+          netMargin >= 0
+            ? theme.palette.success.main
+            : theme.palette.error.main,
+      },
+      {
+        title: "YTD Net Income",
+        value: formatCurrency(ytdNetIncome),
+        description: "Year-to-date performance",
+        trend: ytdNetIncome >= 0 ? "Gain" : "Loss",
+        icon:
+          ytdNetIncome >= 0 ? (
+            <TrendingUpIcon />
+          ) : (
+            <TrendingDownIcon />
+          ),
+        color:
+          ytdNetIncome >= 0
+            ? theme.palette.success.main
+            : theme.palette.error.main,
+      },
+      {
+        title: "YTD Revenue",
+        value: formatCurrency(ytdRevenue),
+        description: "Year-to-date top line",
+        trend: "Revenue",
+        icon: <ShowChartIcon />,
+        color: theme.palette.primary.main,
+      },
+    ];
+  }, [ratios, theme]);
+
+  const reports = useMemo(
+    () => [
+      {
+        title: "Profit & Loss",
+        description: "View income, expenses, and net profit for a selected period.",
+        path: "/accounts/reports/profit-loss",
+        tag: "Income",
+        icon: <AssessmentOutlinedIcon />,
+        color: theme.palette.success.main,
+      },
+      {
+        title: "Balance Sheet",
+        description: "View assets, liabilities, and equity as of a specific date.",
+        path: "/accounts/reports/balance-sheet",
+        tag: "Position",
+        icon: <AccountBalanceOutlinedIcon />,
+        color: theme.palette.info.main,
+      },
+      {
+        title: "Trial Balance",
+        description: "Check if total debits equal total credits for all accounts.",
+        path: "/accounts/reports/trial-balance",
+        tag: "Control",
+        icon: <BalanceOutlinedIcon />,
+        color: theme.palette.primary.main,
+      },
+      {
+        title: "General Ledger",
+        description: "Drill down into transactions for a specific account.",
+        path: "/accounts/reports/general-ledger",
+        tag: "Ledger",
+        icon: <ReceiptLongOutlinedIcon />,
+        color: theme.palette.warning.main,
+      },
+      {
+        title: "Payment Voucher",
+        description: "Create and print payment vouchers for expenses.",
+        path: "/accounts/reports/payment-vouchers",
+        tag: "Payments",
+        icon: <RequestQuoteOutlinedIcon />,
+        color: theme.palette.error.main,
+      },
+      {
+        title: "Fixed Assets",
+        description: "Manage assets, depreciation, disposal, and registers.",
+        path: "/accounts/fixed-assets",
+        tag: "Assets",
+        icon: <Inventory2OutlinedIcon />,
+        color: theme.palette.info.main,
+      },
+      {
+        title: "Reports Registry",
+        description: "Retrieve previously generated and archived reports.",
+        path: "/accounting/reports/archive",
+        tag: "Archive",
+        icon: <ArchiveOutlinedIcon />,
+        color: theme.palette.primary.main,
+      },
+      {
+        title: "Cash Flow",
+        description: "Monitor operating, investing, and financing cash movement.",
+        path: "/accounts/reports/cash-flow",
+        tag: "Cash",
+        icon: <SavingsOutlinedIcon />,
+        color: theme.palette.success.main,
+      },
+      {
+        title: "Budget vs Actual",
+        description: "Set targets and evaluate GL performance against budgets.",
+        path: "/accounts/reports/budget-vs-actual",
+        tag: "Planning",
+        icon: <PriceChangeOutlinedIcon />,
+        color: theme.palette.warning.main,
+      },
+      {
+        title: "A/R Aging",
+        description: "Monitor outstanding customer receivables by aging bucket.",
+        path: "/accounts/reports/ar-aging",
+        tag: "Receivables",
+        icon: <PaidOutlinedIcon />,
+        color: theme.palette.info.main,
+      },
+      {
+        title: "A/P Aging",
+        description: "Monitor outstanding supplier balances and payables exposure.",
+        path: "/accounts/reports/ap-aging",
+        tag: "Payables",
+        icon: <RequestQuoteOutlinedIcon />,
+        color: theme.palette.error.main,
+      },
+      {
+        title: "Bank Reconciliation",
+        description: "Review bank matching and unreconciled ledger lines.",
+        path: "/accounts/reconciliation/bank",
+        tag: "Banking",
+        icon: <SyncAltOutlinedIcon />,
+        color: theme.palette.primary.main,
+      },
+      {
+        title: "Tax Summary",
+        description: "Review PAYE, VAT, NSSF, NHIF, and statutory obligations.",
+        path: "/accounts/reports/tax-summary",
+        tag: "Compliance",
+        icon: <CalculateOutlinedIcon />,
+        color: theme.palette.error.main,
+      },
+    ],
+    [theme]
+  );
 
   return (
-    <Box m={{ xs: "10px", md: "20px" }}>
-      <Header title="Financial Reports" subtitle="Key metrics and report generation" />
+    <Box sx={styles.shell}>
+      <Paper elevation={0} sx={styles.heroCard}>
+        <Box sx={styles.heroOverlay} />
 
-      {/* --- Key Ratios Section --- */}
-      <Box mb={3}>
-        <Typography variant="h4" sx={{ color: colors.grey[100], mb: 2 }}>
-          Key Performance Indicators (YTD)
-        </Typography>
-        {loading ? (
-            <Box display="flex" justifyContent="center" p={5}><CircularProgress /></Box>
-        ) : ratios ? (
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={6} md={3}>
-              <StatBox
-                title="Current Ratio"
-                value={ratios.current_ratio.toFixed(2)}
-                description="Liquidity"
-                icon={<ShowChartIcon sx={{ fontSize: 40 }} />}
-                trend={ratios.current_ratio >= 1.5 ? "Healthy" : "Check Solvency"}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <StatBox
-                title="Net Profit Margin"
-                value={`${(ratios.net_profit_margin * 100).toFixed(1)}%`}
-                description="Profitability"
-                icon={<TrendingUpIcon sx={{ fontSize: 40 }} />}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <StatBox
-                title="YTD Net Income"
-                value={ratios.ytd_net_income.toLocaleString('en-US', { style: 'currency', currency: 'KES' })}
-                description="YTD Performance"
-                icon={ratios.ytd_net_income >= 0 ? <TrendingUpIcon sx={{ fontSize: 40 }} /> : <TrendingDownIcon sx={{ fontSize: 40 }} />}
-              />
-            </Grid>
-             <Grid item xs={12} sm={6} md={3}>
-              <StatBox
-                title="YTD Revenue"
-                value={ratios.ytd_revenue.toLocaleString('en-US', { style: 'currency', currency: 'KES' })}
-                description="YTD Top Line"
-                icon={<ShowChartIcon sx={{ fontSize: 40 }} />}
-              />
-            </Grid>
-          </Grid>
-        ) : (
-            <Typography>Could not load key ratios.</Typography>
-        )}
-      </Box>
+        <Box sx={{ position: "relative", zIndex: 1 }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={1}>
+            <Chip
+              icon={<ShieldOutlinedIcon sx={{ fontSize: 14 }} />}
+              label="Finance Reporting Hub"
+              size="small"
+              sx={styles.heroChip}
+            />
+          </Stack>
 
-      {/* --- Report Navigation Section --- */}
-      <Box>
-        <Typography variant="h4" sx={{ color: colors.grey[100], mb: 2, mt: 4 }}>
-          Generate Reports
-        </Typography>
-        <Grid container spacing={3}>
-            <ReportCard
-                title="Profit & Loss"
-                description="View income, expenses, and net profit for a selected period."
-                icon={<AssessmentOutlinedIcon />}
-                path="/accounts/reports/profit-loss" // We will create this page next
-                colors={colors}
-            />
-            <ReportCard
-                title="Balance Sheet"
-                description="View assets, liabilities, and equity as of a specific date."
-                icon={<AccountBalanceOutlinedIcon />}
-                path="/accounts/reports/balance-sheet" // We will create this page next
-                colors={colors}
-            />
-             <ReportCard
-                title="Trial Balance"
-                description="Check if total debits equal total credits for all accounts."
-                icon={<BalanceOutlinedIcon />}
-                path="/accounts/reports/trial-balance" // We will create this page next
-                colors={colors}
-            />
-            <ReportCard
-                title="General Ledger"
-                description="Drill down into all transactions for a specific account."
-                icon={<ReceiptLongOutlinedIcon />}
-                path="/accounts/reports/general-ledger" // We will create this page next
-                colors={colors}
-            />
-             <ReportCard
-                title="Payment Voucher"
-                description="Create and print a new payment voucher for an expense."
-                icon={<RequestQuoteOutlinedIcon />}
-                path="/accounts/reports/payment-vouchers" 
-                colors={colors}
-            />
-            <ReportCard
-                title="Assets"
-                description="Manage Assets."
-                icon={<RequestQuoteOutlinedIcon />}
-                path="/accounts/reports/fixedassets" 
-                colors={colors}
-            />
-            <ReportCard
-                title="Reports Registry"
-                description="RetrievePreviously generated Reports."
-                icon={<RequestQuoteOutlinedIcon />}
-                path="/accounting/reports/archive" 
-                colors={colors}
-            />
-            <ReportCard
-                title="CashFlow"
-                description="Monitor the Flow of capital."
-                icon={<RequestQuoteOutlinedIcon />}
-                path="/accounting/reports/cashflowstatement" 
-                colors={colors}
-            />
-            <ReportCard
-                title="Budgeting"
-                description="Set Targets and Evaluate Performance of GL."
-                icon={<RequestQuoteOutlinedIcon />}
-                path="/accounting/reports/budgeting" 
-                colors={colors}
-            />
-            
-        </Grid>
+          <Typography sx={styles.heroTitle}>Financial Reports</Typography>
+
+          <Typography sx={styles.heroSubtitle}>
+            Access enterprise-grade financial reports, key ratios, ledger
+            controls, statutory summaries, cashflow insights, and archived
+            reporting from one workspace.
+          </Typography>
+        </Box>
+      </Paper>
+
+      <SectionHeader
+        title="Key Performance Indicators"
+        subtitle="Real-time liquidity and profitability ratios for finance control."
+      />
+
+      {loading ? (
+        <Paper elevation={0} sx={styles.loadingCard}>
+          <CircularProgress size={26} />
+        </Paper>
+      ) : ratios ? (
+        <Box sx={styles.kpiGrid}>
+          {kpis.map((kpi) => (
+            <KpiCard key={kpi.title} {...kpi} />
+          ))}
+        </Box>
+      ) : (
+        <Paper elevation={0} sx={styles.errorCard}>
+          <Typography sx={{ color: "text.secondary", fontSize: "0.78rem" }}>
+            Could not load key ratios.
+          </Typography>
+        </Paper>
+      )}
+
+      <SectionHeader
+        title="Report Library"
+        subtitle="Generate statutory, management, ledger, cash, budget, and control reports."
+      />
+
+      <Box sx={styles.reportGrid}>
+        {reports.map((report) => (
+          <ReportCard key={report.title} report={report} />
+        ))}
       </Box>
     </Box>
   );
 };
 
 export default AccountingReports;
-
