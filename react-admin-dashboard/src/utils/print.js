@@ -1,417 +1,1088 @@
+// src/utils/globalPrint.js
+
 // --------------------------------------------------------------------------------------------------
-// GLOBAL PRINT UTILITY (ROBUST: LETTERHEAD/LOGO PREFETCH + PRINTED BY + ASSET WAIT)
-// --------------------------------------------------------------------------------------------------
+// GLOBAL PRINT UTILITY
+// Modern, consistent, versatile print helper for ERP documents, reports, tables, invoices, payslips,
+// receipts, and letterhead-based printouts.
+//
 // Usage:
-// globalPrint({
+// await globalPrint({
 //   title: "Journal Entries",
+//   subtitle: "Accounting report",
+//   company: {
+//     name: "Ligco Technologies",
+//     tagline: "Enterprise Business Solutions",
+//     logoUrl: "/logo.png",
+//     address: "Nairobi, Kenya",
+//     phone: "+254...",
+//     email: "info@example.com",
+//     website: "example.com",
+//     kraPin: "...",
+//   },
 //   content: "<div>...</div>",
-//   header: buildLetterheadHtml({ companyName, logoUrl }),
 //   printedBy: user?.name,
-//   printedByMeta: { role: user?.role, email: user?.email },
-//   footer: "<div>...</div>",
+//   printedByMeta: {
+//     role: user?.role,
+//     email: user?.email,
+//   },
+//   orientation: "portrait",
+//   margin: "14mm",
 // });
 //
-// IMPORTANT:
-// - If you pass a logoUrl inside the header HTML, ALSO pass it via `assets.logoUrl`
-//   to guarantee it gets embedded (base64) even when remote images are blocked on print.
+// Notes:
+// - For most documents, pass `company` instead of building header HTML manually.
+// - You can still pass custom `header` and `footer`.
+// - If using remote images, same-origin images are most reliable.
+// - Cross-origin images may fail to embed if CORS blocks fetch.
 // --------------------------------------------------------------------------------------------------
 
-export async function globalPrint({
-  title = "Document",
-  content,
-  styles = "",
-  includeGlobalStyles = true,
-  orientation = "portrait", // "portrait" | "landscape"
-  scale = 1,
-  margin = "15mm",
-  footer = "",
-  header = "",
+const DEFAULT_LOGO_URL = "/vendswift_badge_logo.png";
 
-  // ✅ New: who printed
-  printedBy = "", // string
-  printedByMeta = {}, // { role, email, phone, ... } optional
+const PRINT_DEFAULTS = {
+  title: "Document",
+  subtitle: "",
+  content: "",
+  styles: "",
+  includeGlobalStyles: false,
 
-  // ✅ New: allow explicit assets to be embedded (base64) for reliability
-  assets = {
-    // logoUrl: "https://.../logo.png"  OR  "data:image/png;base64,..."
-    logoUrl: "%PUBLIC_URL%/vendswift_badge_logo.png" ,
-    // optional extra images you want embedded
-    images: [], // [{ id: "sig1", url: "https://..." }, ...]
+  orientation: "portrait", // "portrait" | "landscape"
+  paperSize: "A4", // "A4" | "letter" | custom CSS value
+  margin: "14mm",
+  scale: 1,
+
+  header: "",
+  footer: "",
+  showHeader: true,
+  showFooter: true,
+  showTitle: true,
+  showPrintedMeta: true,
+  showPageNumbers: true,
+
+  printedBy: "",
+  printedByMeta: {},
+
+  company: null,
+
+  assets: {
+    logoUrl: DEFAULT_LOGO_URL,
+    images: [],
   },
 
-  // ✅ New: robustness options
-  waitTimeoutMs = 12000, // max wait for assets
-  debug = false,
-} = {}) {
+  waitTimeoutMs: 12000,
+  closeDelayMs: 900,
+  debug: false,
+};
+
+const isBrowser = () =>
+  typeof window !== "undefined" && typeof document !== "undefined";
+
+const isNonEmptyString = (value) =>
+  typeof value === "string" && value.trim().length > 0;
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+const clampScale = (scale) => {
+  const numeric = Number(scale);
+
+  if (!Number.isFinite(numeric)) return 1;
+
+  return Math.min(Math.max(numeric, 0.5), 1.5);
+};
+
+const normalizeOrientation = (orientation) =>
+  orientation === "landscape" ? "landscape" : "portrait";
+
+const normalizeMargin = (margin) => {
+  if (!isNonEmptyString(margin)) return "14mm";
+
+  return margin.trim();
+};
+
+const resolvePageSize = (paperSize, orientation) => {
+  const cleanPaperSize = isNonEmptyString(paperSize) ? paperSize.trim() : "A4";
+
+  return `${cleanPaperSize} ${normalizeOrientation(orientation)}`;
+};
+
+const getHorizontalMargins = (margin) => {
+  const parts = normalizeMargin(margin).split(/\s+/);
+
+  return {
+    top: parts[0],
+    right: parts[1] || parts[0],
+    bottom: parts[2] || parts[0],
+    left: parts[3] || parts[1] || parts[0],
+  };
+};
+
+const safeLog = (enabled, ...args) => {
+  if (enabled) {
+    console.log("[globalPrint]", ...args);
+  }
+};
+
+const toAbsoluteUrl = (url) => {
+  if (!isNonEmptyString(url)) return "";
+
+  const cleanUrl = url.trim();
+
+  if (
+    cleanUrl.startsWith("data:") ||
+    cleanUrl.startsWith("blob:") ||
+    cleanUrl.startsWith("http://") ||
+    cleanUrl.startsWith("https://")
+  ) {
+    return cleanUrl;
+  }
+
+  if (!isBrowser()) return cleanUrl;
+
   try {
-    if (!content) {
-      console.error("globalPrint: No content supplied");
-      return;
+    return new URL(cleanUrl, window.location.origin).href;
+  } catch {
+    return cleanUrl;
+  }
+};
+
+const fetchAsDataUrl = async (url, debug = false) => {
+  const absoluteUrl = toAbsoluteUrl(url);
+
+  if (!absoluteUrl) return "";
+  if (absoluteUrl.startsWith("data:")) return absoluteUrl;
+
+  try {
+    const response = await fetch(absoluteUrl, {
+      mode: "cors",
+      cache: "force-cache",
+      credentials: absoluteUrl.startsWith(window.location.origin)
+        ? "same-origin"
+        : "omit",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Asset fetch failed with status ${response.status}`);
     }
 
-    // ----------------------------
-    // Helpers
-    // ----------------------------
-    const log = (...args) => debug && console.log("[globalPrint]", ...args);
+    const blob = await response.blob();
 
-    const escapeHtml = (s) =>
-      String(s ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
 
-    const now = new Date();
-    const printedAt = now.toLocaleString("en-GB");
-    const printedByLine = printedBy
-      ? `Printed by: ${escapeHtml(printedBy)}`
-      : `Printed: ${escapeHtml(printedAt)}`;
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    safeLog(debug, "Could not embed asset:", absoluteUrl, error?.message);
 
-    const printedByMetaLine = Object.keys(printedByMeta || {}).length
-      ? Object.entries(printedByMeta)
-          .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
-          .map(([k, v]) => `${escapeHtml(k)}: ${escapeHtml(v)}`)
-          .join(" · ")
-      : "";
+    return "";
+  }
+};
 
-    const toDataUrlIfPossible = async (url) => {
-      if (!url) return "";
-      if (String(url).startsWith("data:")) return url; // already embedded
+const replaceAllImageSourcesWithDataUrls = async (html, debug = false) => {
+  if (!isNonEmptyString(html)) return html || "";
 
-      // Remote fetch attempt. If CORS blocks it, we fail gracefully.
-      try {
-        const res = await fetch(url, { mode: "cors", cache: "force-cache" });
-        if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-        const blob = await res.blob();
-        const dataUrl = await new Promise((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve(r.result);
-          r.onerror = reject;
-          r.readAsDataURL(blob);
-        });
-        return dataUrl;
-      } catch (e) {
-        log("Could not embed asset (CORS/blocked):", url, e?.message);
-        return ""; // fallback to normal <img src="..."> if present in header HTML
+  const matches = [...html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)];
+
+  if (!matches.length) return html;
+
+  const uniqueSources = [...new Set(matches.map((match) => match[1]).filter(Boolean))];
+
+  const replacements = {};
+
+  await Promise.all(
+    uniqueSources.map(async (src) => {
+      if (src.startsWith("data:")) return;
+
+      const dataUrl = await fetchAsDataUrl(src, debug);
+
+      if (dataUrl) {
+        replacements[src] = dataUrl;
       }
-    };
+    })
+  );
 
-    // Replace <img src="..."> to data url (same-origin + cors-allowed)
-    const embedImagesInHtml = async (html) => {
-      if (!html) return html;
+  let output = html;
 
-      // Find src="...".
-      // Basic parser (good enough): capture src attribute values
-      const srcMatches = [...html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)];
-      if (!srcMatches.length) return html;
+  Object.entries(replacements).forEach(([src, dataUrl]) => {
+    output = output.replaceAll(`src="${src}"`, `src="${dataUrl}"`);
+    output = output.replaceAll(`src='${src}'`, `src='${dataUrl}'`);
+  });
 
-      const uniqueSrc = [...new Set(srcMatches.map((m) => m[1]).filter(Boolean))];
+  return output;
+};
 
-      const conversions = {};
-      await Promise.all(
-        uniqueSrc.map(async (src) => {
-          // Only try to embed http(s) and same-origin. data: already ok.
-          if (src.startsWith("data:")) return;
+const replacePrintAssetTokens = async (html, images = [], debug = false) => {
+  if (!isNonEmptyString(html) || !Array.isArray(images) || !images.length) {
+    return html || "";
+  }
 
-          // For reliability: same-origin is almost always embeddable.
-          // Cross-origin may fail due to CORS; we try anyway.
-          const dataUrl = await toDataUrlIfPossible(src);
-          if (dataUrl) conversions[src] = dataUrl;
-        })
-      );
+  const replacements = {};
 
-      let out = html;
-      Object.entries(conversions).forEach(([src, dataUrl]) => {
-        // Replace all occurrences of that src
-        out = out.replaceAll(`src="${src}"`, `src="${dataUrl}"`);
-        out = out.replaceAll(`src='${src}'`, `src='${dataUrl}'`);
+  await Promise.all(
+    images.map(async (asset) => {
+      if (!asset?.id || !asset?.url) return;
+
+      const dataUrl = await fetchAsDataUrl(asset.url, debug);
+
+      if (dataUrl) {
+        replacements[`__PRINT_ASSET_${asset.id}__`] = dataUrl;
+      }
+    })
+  );
+
+  let output = html;
+
+  Object.entries(replacements).forEach(([token, dataUrl]) => {
+    output = output.replaceAll(token, dataUrl);
+  });
+
+  return output;
+};
+
+const collectGlobalCss = () => {
+  if (!isBrowser()) return "";
+
+  let css = "";
+
+  Array.from(document.styleSheets || []).forEach((sheet) => {
+    try {
+      if (
+        sheet.href &&
+        sheet.href.startsWith("http") &&
+        !sheet.href.startsWith(window.location.origin)
+      ) {
+        return;
+      }
+
+      if (!sheet.cssRules) return;
+
+      Array.from(sheet.cssRules).forEach((rule) => {
+        css += `${rule.cssText}\n`;
       });
+    } catch {
+      // Ignore CORS-protected stylesheets.
+    }
+  });
 
-      return out;
-    };
+  return css;
+};
 
-    // Collect global CSS from same-origin stylesheets only
-    const collectGlobalCss = () => {
-      let globalCss = "";
-      if (!includeGlobalStyles) return globalCss;
+export const buildLetterheadHtml = ({
+  companyName = "",
+  tagline = "",
+  logoUrl = "",
+  address = "",
+  phone = "",
+  email = "",
+  website = "",
+  kraPin = "",
+  vatPin = "",
+  documentTitle = "",
+  documentSubtitle = "",
+  meta = {},
+} = {}) => {
+  const safeLogo = isNonEmptyString(logoUrl)
+    ? `<img class="print-letterhead-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(
+        companyName || "Company logo"
+      )}" />`
+    : "";
 
-      const styleSheets = Array.from(document.styleSheets);
-      styleSheets.forEach((sheet) => {
-        try {
-          // Skip cross-origin http stylesheets (CORS)
-          if (
-            sheet.href &&
-            sheet.href.startsWith(window.location.origin) === false &&
-            sheet.href.startsWith("http") === true
-          )
-            return;
+  const contactItems = [
+    address,
+    phone ? `Tel: ${phone}` : "",
+    email ? `Email: ${email}` : "",
+    website ? `Web: ${website}` : "",
+    kraPin ? `KRA PIN: ${kraPin}` : "",
+    vatPin ? `VAT PIN: ${vatPin}` : "",
+  ].filter(Boolean);
 
-          if (!sheet.cssRules) return;
+  const metaItems = Object.entries(meta || {})
+    .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+    .map(
+      ([key, value]) =>
+        `<span><strong>${escapeHtml(key)}:</strong> ${escapeHtml(value)}</span>`
+    )
+    .join("");
 
-          for (let rule of sheet.cssRules) {
-            globalCss += rule.cssText;
+  return `
+    <div class="print-letterhead">
+      <div class="print-letterhead-main">
+        <div class="print-letterhead-logo-wrap">
+          ${safeLogo}
+        </div>
+
+        <div class="print-letterhead-company">
+          ${
+            companyName
+              ? `<div class="print-letterhead-name">${escapeHtml(companyName)}</div>`
+              : ""
           }
-        } catch (err) {
-          // Ignore CORS/security errors
-        }
-      });
+          ${tagline ? `<div class="print-letterhead-tagline">${escapeHtml(tagline)}</div>` : ""}
+          ${
+            contactItems.length
+              ? `<div class="print-letterhead-contacts">${contactItems
+                  .map((item) => `<span>${escapeHtml(item)}</span>`)
+                  .join("")}</div>`
+              : ""
+          }
+        </div>
 
-      return globalCss;
-    };
+        <div class="print-letterhead-doc">
+          ${
+            documentTitle
+              ? `<div class="print-letterhead-doc-title">${escapeHtml(documentTitle)}</div>`
+              : ""
+          }
+          ${
+            documentSubtitle
+              ? `<div class="print-letterhead-doc-subtitle">${escapeHtml(documentSubtitle)}</div>`
+              : ""
+          }
+        </div>
+      </div>
 
-    // Extract left/right margin for header/footer constraint
-    const marginParts = margin.trim().split(/\s+/);
-    const marginLeft = marginParts[3] || marginParts[1] || marginParts[0];
-    const marginRight = marginParts[1] || marginParts[0];
+      ${metaItems ? `<div class="print-letterhead-meta">${metaItems}</div>` : ""}
 
-    const HEADER_CLEARANCE_HEIGHT = "140px"; // slightly safer default
-    const FOOTER_CLEARANCE_HEIGHT = "70px";
+      <div class="print-letterhead-rule"></div>
+    </div>
+  `;
+};
 
-    // ----------------------------
-    // Asset embedding strategy
-    // ----------------------------
-    // 1) Embed explicit logoUrl if provided (best reliability)
-    // 2) Embed images inside header/footer/content HTML when possible
-    const explicitLogoDataUrl = assets?.logoUrl
-      ? await toDataUrlIfPossible(assets.logoUrl)
-      : "";
+const buildDefaultHeader = ({
+  title,
+  subtitle,
+  company,
+  assets,
+  showTitle,
+}) => {
+  if (company) {
+    return buildLetterheadHtml({
+      companyName: company.name,
+      tagline: company.tagline,
+      logoUrl: company.logoUrl || assets?.logoUrl || "",
+      address: company.address,
+      phone: company.phone,
+      email: company.email,
+      website: company.website,
+      kraPin: company.kraPin,
+      vatPin: company.vatPin,
+      documentTitle: showTitle ? title : "",
+      documentSubtitle: subtitle,
+      meta: company.meta || {},
+    });
+  }
 
-    // If they passed a logoUrl but embedding fails (CORS), we still proceed.
-    // We'll also optionally inject an <img> if they didn't put one in header.
-    const headerHasImg = /<img[\s\S]*?>/i.test(header || "");
-    const injectedLogo =
-      explicitLogoDataUrl && !headerHasImg
-        ? `<img src="${explicitLogoDataUrl}" alt="Logo" style="height:52px;max-width:180px;object-fit:contain;" />`
-        : "";
+  if (!showTitle) return "";
 
-    // Embed images inside header/footer/content
-    let headerHtml = header || "";
-    let footerHtml = footer || "";
-    let contentHtml = content;
+  return `
+    <div class="print-simple-header">
+      <div>
+        <div class="print-document-title">${escapeHtml(title)}</div>
+        ${subtitle ? `<div class="print-document-subtitle">${escapeHtml(subtitle)}</div>` : ""}
+      </div>
+    </div>
+  `;
+};
 
-    // If logo is embeddable AND header already has a logo URL, replace it as well
-    // (handled by embedImagesInHtml)
-    headerHtml = await embedImagesInHtml(headerHtml);
-    footerHtml = await embedImagesInHtml(footerHtml);
-    contentHtml = await embedImagesInHtml(contentHtml);
+const buildPrintedMetaHtml = ({
+  printedBy,
+  printedByMeta,
+  printedAt,
+  showPrintedMeta,
+}) => {
+  if (!showPrintedMeta) return "";
 
-    // If explicit images list was provided, force-inject them (optional)
-    // This is useful for signatures, stamps etc.
-    // You can reference them in your html: <img src="__PRINT_ASSET_sig1__" />
-    if (Array.isArray(assets?.images) && assets.images.length) {
-      const map = {};
-      await Promise.all(
-        assets.images.map(async (img) => {
-          const dataUrl = await toDataUrlIfPossible(img.url);
-          if (dataUrl) map[`__PRINT_ASSET_${img.id}__`] = dataUrl;
-        })
-      );
+  const left = printedBy
+    ? `Printed by: ${escapeHtml(printedBy)}`
+    : "Generated document";
 
-      const replaceTokens = (html) => {
-        let out = html;
-        Object.entries(map).forEach(([token, dataUrl]) => {
-          out = out.replaceAll(token, dataUrl);
-        });
-        return out;
-      };
+  const metaText = Object.entries(printedByMeta || {})
+    .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
+    .map(([key, value]) => `${escapeHtml(key)}: ${escapeHtml(value)}`)
+    .join(" · ");
 
-      headerHtml = replaceTokens(headerHtml);
-      footerHtml = replaceTokens(footerHtml);
-      contentHtml = replaceTokens(contentHtml);
+  return `
+    <div class="print-meta-footer">
+      <div>${left}${metaText ? ` · ${metaText}` : ""}</div>
+      <div>Printed: ${escapeHtml(printedAt)}</div>
+    </div>
+  `;
+};
+
+const buildDefaultPrintCss = ({
+  pageSize,
+  margin,
+  scale,
+  showHeader,
+  showFooter,
+  headerClearance,
+  footerClearance,
+  leftMargin,
+  rightMargin,
+  includeGlobalStyles,
+  globalCss,
+  customCss,
+}) => `
+  @page {
+    size: ${pageSize};
+    margin: ${margin};
+  }
+
+  ${includeGlobalStyles ? globalCss : ""}
+
+  :root {
+    --print-text: #0f172a;
+    --print-muted: #64748b;
+    --print-border: #cbd5e1;
+    --print-soft-border: #e2e8f0;
+    --print-surface: #ffffff;
+    --print-soft-bg: #f8fafc;
+    --print-primary: #2563eb;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff !important;
+    color: var(--print-text);
+    font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    transform-origin: top left;
+    transform: scale(${scale});
+    width: calc(100% / ${scale});
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .print-root {
+    width: 100%;
+  }
+
+  .print-header {
+    display: ${showHeader ? "block" : "none"};
+  }
+
+  .print-footer {
+    display: ${showFooter ? "block" : "none"};
+  }
+
+  .print-body {
+    width: 100%;
+  }
+
+  .print-letterhead {
+    width: 100%;
+    background: #ffffff;
+  }
+
+  .print-letterhead-main {
+    display: grid;
+    grid-template-columns: 92px 1fr minmax(150px, 240px);
+    align-items: center;
+    gap: 14px;
+  }
+
+  .print-letterhead-logo-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 58px;
+  }
+
+  .print-letterhead-logo {
+    max-height: 58px;
+    max-width: 86px;
+    object-fit: contain;
+  }
+
+  .print-letterhead-name {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--print-text);
+    text-transform: uppercase;
+  }
+
+  .print-letterhead-tagline {
+    margin-top: 3px;
+    font-size: 10.5px;
+    color: var(--print-muted);
+  }
+
+  .print-letterhead-contacts {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    color: var(--print-muted);
+    font-size: 9.5px;
+  }
+
+  .print-letterhead-doc {
+    text-align: right;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .print-letterhead-doc-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--print-text);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .print-letterhead-doc-subtitle {
+    margin-top: 4px;
+    font-size: 9.5px;
+    color: var(--print-muted);
+  }
+
+  .print-letterhead-meta {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: 9.5px;
+    color: var(--print-muted);
+  }
+
+  .print-letterhead-rule {
+    margin-top: 10px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--print-primary), #94a3b8);
+  }
+
+  .print-simple-header {
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--print-primary);
+  }
+
+  .print-document-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--print-text);
+  }
+
+  .print-document-subtitle {
+    margin-top: 3px;
+    color: var(--print-muted);
+    font-size: 10px;
+  }
+
+  .print-meta-footer {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    font-size: 9.5px;
+    color: var(--print-muted);
+    border-top: 1px solid var(--print-soft-border);
+    padding-top: 6px;
+  }
+
+  .print-footer-custom {
+    margin-bottom: 6px;
+  }
+
+  .page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  th,
+  td {
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--print-soft-border);
+    vertical-align: top;
+  }
+
+  th {
+    background: var(--print-soft-bg);
+    color: var(--print-text);
+    font-weight: 700;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: left;
+  }
+
+  td {
+    font-size: 10px;
+  }
+
+  .print-card {
+    border: 1px solid var(--print-soft-border);
+    border-radius: 10px;
+    padding: 12px;
+    background: #ffffff;
+    break-inside: avoid;
+  }
+
+  .print-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .print-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .print-kpi {
+    border: 1px solid var(--print-soft-border);
+    border-radius: 9px;
+    padding: 9px;
+    background: var(--print-soft-bg);
+  }
+
+  .print-kpi-label {
+    color: var(--print-muted);
+    font-size: 9px;
+  }
+
+  .print-kpi-value {
+    margin-top: 3px;
+    color: var(--print-text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  @media print {
+    html,
+    body {
+      width: 100%;
     }
 
-    // Inject "Printed by" line into footer (always)
-    const printedByBlock = `
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;width:100%;font-size:11px;color:#333;">
-        <div>${printedByLine}${printedByMetaLine ? ` · ${printedByMetaLine}` : ""}</div>
-        <div>Printed: ${escapeHtml(printedAt)}</div>
-      </div>
+    .no-print {
+      display: none !important;
+    }
+
+    .print-header {
+      position: fixed;
+      top: 0;
+      left: ${leftMargin};
+      right: ${rightMargin};
+      padding: 0 0 8px 0;
+      background: #ffffff;
+      z-index: 9999;
+    }
+
+    .print-footer {
+      position: fixed;
+      bottom: 0;
+      left: ${leftMargin};
+      right: ${rightMargin};
+      padding: 6px 0 0 0;
+      background: #ffffff;
+      z-index: 9999;
+    }
+
+    .print-body {
+      margin-top: ${showHeader ? headerClearance : "0"};
+      margin-bottom: ${showFooter ? footerClearance : "0"};
+    }
+  }
+
+  ${customCss || ""}
+`;
+
+const createHiddenIframe = () => {
+  const iframe = document.createElement("iframe");
+
+  iframe.setAttribute("title", "Print frame");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.setAttribute("sandbox", "allow-modals allow-same-origin allow-scripts");
+
+  Object.assign(iframe.style, {
+    position: "fixed",
+    right: "0",
+    bottom: "0",
+    width: "0",
+    height: "0",
+    border: "0",
+    opacity: "0",
+    pointerEvents: "none",
+  });
+
+  document.body.appendChild(iframe);
+
+  return iframe;
+};
+
+const waitForDocumentReady = async (win, timeoutMs) => {
+  await new Promise((resolve) => {
+    const startedAt = Date.now();
+
+    const tick = () => {
+      const ready = win.document.readyState === "complete";
+      const timedOut = Date.now() - startedAt >= timeoutMs;
+
+      if (ready || timedOut) {
+        resolve();
+        return;
+      }
+
+      setTimeout(tick, 50);
+    };
+
+    tick();
+  });
+};
+
+const waitForImages = async (win, timeoutMs) => {
+  const images = Array.from(win.document.images || []);
+
+  if (!images.length) return;
+
+  const promises = images.map((img) => {
+    if (img.complete) {
+      if (typeof img.decode === "function") {
+        return img.decode().catch(() => {});
+      }
+
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      img.onload = resolve;
+      img.onerror = resolve;
+    });
+  });
+
+  await Promise.race([
+    Promise.all(promises),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+};
+
+const waitForFonts = async (win, timeoutMs) => {
+  if (!win.document.fonts || typeof win.document.fonts.ready?.then !== "function") {
+    return;
+  }
+
+  await Promise.race([
+    win.document.fonts.ready.catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+};
+
+const waitForPrintReady = async (win, timeoutMs) => {
+  await waitForDocumentReady(win, timeoutMs);
+  await waitForImages(win, timeoutMs);
+  await waitForFonts(win, timeoutMs);
+};
+
+export async function globalPrint(options = {}) {
+  if (!isBrowser()) {
+    console.error("globalPrint: window/document is not available.");
+    return false;
+  }
+
+  const config = {
+    ...PRINT_DEFAULTS,
+    ...options,
+    assets: {
+      ...PRINT_DEFAULTS.assets,
+      ...(options.assets || {}),
+    },
+  };
+
+  const {
+    title,
+    subtitle,
+    content,
+    styles,
+    includeGlobalStyles,
+    orientation,
+    paperSize,
+    margin,
+    scale,
+    header,
+    footer,
+    showHeader,
+    showFooter,
+    showTitle,
+    showPrintedMeta,
+    showPageNumbers,
+    printedBy,
+    printedByMeta,
+    company,
+    assets,
+    waitTimeoutMs,
+    closeDelayMs,
+    debug,
+  } = config;
+
+  if (!isNonEmptyString(content)) {
+    console.error("globalPrint: No content supplied.");
+    return false;
+  }
+
+  const safeScale = clampScale(scale);
+  const safeMargin = normalizeMargin(margin);
+  const pageSize = resolvePageSize(paperSize, orientation);
+  const margins = getHorizontalMargins(safeMargin);
+
+  const printedAt = new Date().toLocaleString("en-GB");
+
+  let iframe = null;
+
+  try {
+    const logoUrl = company?.logoUrl || assets?.logoUrl || "";
+    const embeddedLogo = await fetchAsDataUrl(logoUrl, debug);
+
+    const normalizedAssets = {
+      ...assets,
+      logoUrl: embeddedLogo || logoUrl || "",
+    };
+
+    const rawHeader =
+      isNonEmptyString(header)
+        ? header
+        : buildDefaultHeader({
+            title,
+            subtitle,
+            company: company
+              ? {
+                  ...company,
+                  logoUrl: normalizedAssets.logoUrl,
+                }
+              : null,
+            assets: normalizedAssets,
+            showTitle,
+          });
+
+    const printedMetaHtml = buildPrintedMetaHtml({
+      printedBy,
+      printedByMeta,
+      printedAt,
+      showPrintedMeta,
+    });
+
+    const rawFooter = `
+      ${isNonEmptyString(footer) ? `<div class="print-footer-custom">${footer}</div>` : ""}
+      ${printedMetaHtml}
     `;
 
-    // If footer is empty, create a basic footer with printed info
-    // If footer exists, append printed info neatly.
-    const finalFooterHtml = footerHtml
-      ? `${footerHtml}<div style="height:6px;"></div>${printedByBlock}`
-      : printedByBlock;
+    let headerHtml = rawHeader;
+    let footerHtml = rawFooter;
+    let contentHtml = content;
 
-    // If header doesn't include an image and we have a safe embedded logo, prepend it.
-    const finalHeaderHtml = injectedLogo
-      ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-          <div>${injectedLogo}</div>
-          <div style="flex:1;"></div>
-        </div>
-        <div style="height:6px;"></div>
-        ${headerHtml}
-      `
-      : headerHtml;
+    headerHtml = await replaceAllImageSourcesWithDataUrls(headerHtml, debug);
+    footerHtml = await replaceAllImageSourcesWithDataUrls(footerHtml, debug);
+    contentHtml = await replaceAllImageSourcesWithDataUrls(contentHtml, debug);
 
-    // ----------------------------
-    // Build iframe
-    // ----------------------------
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.opacity = "0";
-    iframe.style.pointerEvents = "none";
-    iframe.setAttribute("sandbox", "allow-modals allow-same-origin allow-scripts");
-    document.body.appendChild(iframe);
+    headerHtml = await replacePrintAssetTokens(headerHtml, assets?.images, debug);
+    footerHtml = await replacePrintAssetTokens(footerHtml, assets?.images, debug);
+    contentHtml = await replacePrintAssetTokens(contentHtml, assets?.images, debug);
 
-    const doc = iframe.contentWindow.document;
+    const globalCss = includeGlobalStyles ? collectGlobalCss() : "";
 
-    const globalCss = collectGlobalCss();
+    const headerClearance = company || isNonEmptyString(header)
+      ? "122px"
+      : showTitle
+      ? "58px"
+      : "0";
 
-    // NOTE: Put @page rules first to reduce browser variance
+    const footerClearance = showFooter ? "42px" : "0";
+
+    const finalCss = buildDefaultPrintCss({
+      pageSize,
+      margin: safeMargin,
+      scale: safeScale,
+      showHeader: showHeader && isNonEmptyString(headerHtml),
+      showFooter,
+      headerClearance,
+      footerClearance,
+      leftMargin: margins.left,
+      rightMargin: margins.right,
+      includeGlobalStyles,
+      globalCss,
+      customCss: styles,
+    });
+
+    const pageNumberHtml = showPageNumbers
+      ? `<span class="print-page-number"></span>`
+      : "";
+
     const finalHtml = `
+      <!doctype html>
       <html>
         <head>
           <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
           <title>${escapeHtml(title)}</title>
-
-          <style>
-            @page { size: ${orientation}; margin: ${margin}; }
-
-            /* Inject global CSS */
-            ${globalCss}
-
-            /* Inject custom CSS */
-            ${styles}
-
-            html, body {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-              transform-origin: top left;
-              transform: scale(${scale});
-              width: calc(100% / ${scale});
-            }
-
-            .page-break { page-break-before: always; }
-
-            table { page-break-inside: auto; }
-            thead { display: table-header-group; }
-            tfoot { display: table-footer-group; }
-            tr { page-break-inside: avoid !important; page-break-after: auto; }
-
-            @media print {
-              .print-header {
-                display: block;
-                position: fixed;
-                top: 0;
-                left: ${marginLeft};
-                right: ${marginRight};
-                padding: 6px 0;
-                background: white;
-                z-index: 9999;
-              }
-
-              .print-footer {
-                display: block;
-                position: fixed;
-                bottom: 0;
-                left: ${marginLeft};
-                right: ${marginRight};
-                padding: 6px 0;
-                background: white;
-                z-index: 9999;
-              }
-
-              .print-body {
-                margin-top: ${HEADER_CLEARANCE_HEIGHT};
-                margin-bottom: ${FOOTER_CLEARANCE_HEIGHT};
-              }
-            }
-          </style>
+          <style>${finalCss}</style>
         </head>
 
         <body>
-          ${finalHeaderHtml ? `<div class="print-header">${finalHeaderHtml}</div>` : ""}
-          <div class="print-body">${contentHtml}</div>
-          <div class="print-footer">${finalFooterHtml}</div>
+          <div class="print-root">
+            ${
+              showHeader && isNonEmptyString(headerHtml)
+                ? `<header class="print-header">${headerHtml}</header>`
+                : ""
+            }
+
+            <main class="print-body">
+              ${contentHtml}
+            </main>
+
+            ${
+              showFooter
+                ? `<footer class="print-footer">${footerHtml}${pageNumberHtml}</footer>`
+                : ""
+            }
+          </div>
         </body>
       </html>
     `;
 
-    // Write HTML into iframe
-    doc.open();
-    doc.write(finalHtml);
-    doc.close();
+    iframe = createHiddenIframe();
 
-    // ----------------------------
-    // Wait for readiness (more robust)
-    // ----------------------------
-    const waitForReady = async () => {
-      const win = iframe.contentWindow;
+    const win = iframe.contentWindow;
+    const doc = win.document;
 
-      // 1) Wait document complete or timeout
-      await new Promise((resolve) => {
-        const start = Date.now();
-        const tick = () => {
-          const ready = win.document.readyState === "complete";
-          const timedOut = Date.now() - start > waitTimeoutMs;
-          if (ready || timedOut) return resolve();
-          setTimeout(tick, 50);
-        };
-        tick();
-      });
+    await new Promise((resolve) => {
+      iframe.onload = resolve;
 
-      // 2) Wait images decode
-      const imgs = Array.from(win.document.images || []);
-      const imgPromises = imgs.map((img) => {
-        // If broken or already complete, resolve
-        if (img.complete) {
-          // decode() can still help on some browsers
-          if (typeof img.decode === "function") return img.decode().catch(() => {});
-          return Promise.resolve();
-        }
-        // Otherwise wait load/error
-        return new Promise((resolve) => {
-          img.onload = () => resolve();
-          img.onerror = () => resolve();
-        });
-      });
+      doc.open();
+      doc.write(finalHtml);
+      doc.close();
 
-      await Promise.race([
-        Promise.all(imgPromises),
-        new Promise((resolve) => setTimeout(resolve, waitTimeoutMs)),
-      ]);
+      // Some browsers do not reliably trigger iframe.onload after doc.write.
+      setTimeout(resolve, 100);
+    });
 
-      // 3) Wait fonts (if supported)
-      if (win.document.fonts && typeof win.document.fonts.ready?.then === "function") {
-        await Promise.race([
-          win.document.fonts.ready.catch(() => {}),
-          new Promise((resolve) => setTimeout(resolve, waitTimeoutMs)),
-        ]);
-      }
-    };
+    await waitForPrintReady(win, waitTimeoutMs);
 
-    // onload is not always enough for fonts/images; we still wait
-    iframe.onload = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    win.focus();
+    win.print();
+
+    setTimeout(() => {
       try {
-        await waitForReady();
-      } catch (e) {
-        log("waitForReady error:", e?.message);
+        iframe?.parentNode?.removeChild(iframe);
+      } catch {
+        // Ignore cleanup errors.
       }
+    }, closeDelayMs);
 
-      // Print
-      setTimeout(() => {
-        try {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-        } finally {
-          // Cleanup
-          setTimeout(() => {
-            try {
-              document.body.removeChild(iframe);
-            } catch (_) {}
-          }, 800);
-        }
-      }, 200);
-    };
-  } catch (e) {
-    console.error("globalPrint error:", e);
+    return true;
+  } catch (error) {
+    console.error("globalPrint error:", error);
+
+    try {
+      iframe?.parentNode?.removeChild(iframe);
+    } catch {
+      // Ignore cleanup errors.
+    }
+
+    return false;
   }
+}
+
+// --------------------------------------------------------------------------------------------------
+// Optional helper: convert a simple array of objects into printable table HTML.
+// --------------------------------------------------------------------------------------------------
+export function buildPrintableTable({
+  columns = [],
+  rows = [],
+  emptyText = "No records found.",
+  className = "",
+} = {}) {
+  if (!Array.isArray(columns) || !columns.length) {
+    return `<div class="print-card">${escapeHtml(emptyText)}</div>`;
+  }
+
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  const headerHtml = columns
+    .map((column) => `<th>${escapeHtml(column.label || column.key || "")}</th>`)
+    .join("");
+
+  const bodyHtml = safeRows.length
+    ? safeRows
+        .map((row) => {
+          const cells = columns
+            .map((column) => {
+              const value =
+                typeof column.render === "function"
+                  ? column.render(row)
+                  : row?.[column.key];
+
+              return `<td>${value === undefined || value === null ? "" : String(value)}</td>`;
+            })
+            .join("");
+
+          return `<tr>${cells}</tr>`;
+        })
+        .join("")
+    : `<tr><td colspan="${columns.length}" style="text-align:center;color:#64748b;padding:18px;">${escapeHtml(
+        emptyText
+      )}</td></tr>`;
+
+  return `
+    <table class="${escapeHtml(className)}">
+      <thead>
+        <tr>${headerHtml}</tr>
+      </thead>
+      <tbody>
+        ${bodyHtml}
+      </tbody>
+    </table>
+  `;
 }

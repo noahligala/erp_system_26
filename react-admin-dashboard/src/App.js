@@ -11,7 +11,6 @@ import Team from "./scenes/team";
 // import Invoices from "./scenes/invoices";
 import Contacts from "./scenes/contacts";
 import Bar from "./scenes/bar";
-import Form from "./scenes/form";
 import Line from "./scenes/line";
 import Pie from "./scenes/pie";
 import FAQ from "./scenes/faq";
@@ -66,6 +65,7 @@ import StockAdjustment from "./scenes/accounting/inventory/StockAdjustment";
 import CashFlowStatement from "./scenes/accounting/reports/CashFlowStatement";
 import Budget from "./scenes/accounting/reports/Budget.";
 import UserProfileView from "./scenes/user/UserProfileView";
+import ApiLandingPage from "./scenes/public/ApiLandingPage";
 
 // --- NEW IMPORTS: Public Careers Pages ---
 // Adjust these import paths based on where you saved the files
@@ -164,6 +164,7 @@ function App() {
 {/* --- PUBLIC ROUTES (No Login Required) --- */}
               <Route path="/careers/:companyId" element={<Careers />} />
               <Route path="/careers/:companyId/:jobId/apply" element={<JobApply />} />
+              <Route path="/api-platform" element={<ApiLandingPage />} />
               
               <Route
                 path="/login"
